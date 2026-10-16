@@ -3,6 +3,11 @@ import os
 import sqlite3
 import tempfile
 import unittest
+import json
+import re
+import threading
+import urllib.error
+import urllib.request
 from pathlib import Path
 from unittest.mock import patch
 
@@ -78,6 +83,13 @@ class PreviewDataSafetyTests(unittest.TestCase):
 
 
 class SecurityHeaderTests(unittest.TestCase):
+    def test_production_configuration_gate_requires_shared_services_and_tls(self):
+        with patch.object(server,"IS_POSTGRES",False), patch.dict(os.environ,{"APP_ENV":"production","DATABASE_URL":"","REDIS_URL":"","SMTP_HOST":"","SMTP_FROM":"","ROOMROUTE_PUBLIC_URL":"","ROOMROUTE_ALLOWED_HOSTS":""},clear=False):
+            with self.assertRaises(SystemExit): server.validate_production_config()
+        values={"APP_ENV":"production","DATABASE_URL":"postgresql://db.example/roomroute","REDIS_URL":"rediss://redis.example/0","SMTP_HOST":"smtp.example","SMTP_PORT":"587","SMTP_STARTTLS":"1","SMTP_FROM":"RoomRoute <no-reply@example.test>","ROOMROUTE_PUBLIC_URL":"https://roomroute.example","ROOMROUTE_ALLOWED_HOSTS":"roomroute.example","ROOMROUTE_DB_POOL_SIZE":"20","ROOMROUTE_TRUST_PROXY_CIDRS":""}
+        with patch.object(server,"IS_POSTGRES",True), patch.dict(os.environ,values,clear=False):
+            server.validate_production_config()
+
     def test_forwarded_proto_does_not_control_secure_cookie(self):
         handler = object.__new__(server.Handler)
         handler.headers = {"X-Forwarded-Proto": "https"}
@@ -113,6 +125,166 @@ class SecurityHeaderTests(unittest.TestCase):
             handler.headers = {"Origin": "https://roomroute.example", "Host": "roomroute.example"}
             self.assertTrue(server.Handler.trusted_host(handler))
             self.assertTrue(server.Handler.check_origin(handler))
+
+    def test_forwarded_ip_is_trusted_only_from_configured_proxy_networks(self):
+        handler=object.__new__(server.Handler)
+        handler.client_address=("10.0.1.5",443)
+        handler.headers={"X-Forwarded-For":"198.51.100.77, 10.0.2.9"}
+        with patch.dict(os.environ,{"ROOMROUTE_TRUST_PROXY_CIDRS":"10.0.0.0/8"}):
+            self.assertEqual(server.Handler.client_ip(handler),"198.51.100.77")
+        handler.client_address=("198.51.100.8",443)
+        with patch.dict(os.environ,{"ROOMROUTE_TRUST_PROXY_CIDRS":"10.0.0.0/8"}):
+            self.assertEqual(server.Handler.client_ip(handler),"198.51.100.8")
+
+
+class ServiceFlowTests(unittest.TestCase):
+    def setUp(self):
+        self.tempdir=tempfile.TemporaryDirectory(dir=Path(__file__).parent)
+        self.old_db=server.DB
+        server.DB=Path(self.tempdir.name)/"service-flow.sqlite3"
+        server.init_db()
+        try:
+            self.http=server.BoundedThreadingHTTPServer(("127.0.0.1",0),server.Handler)
+        except OSError as error:
+            if getattr(error,"winerror",None)==10013: self.skipTest("Sandbox does not permit local test sockets")
+            raise
+        self.port=self.http.server_address[1]
+        self.base=f"http://127.0.0.1:{self.port}"
+        self.env=patch.dict(os.environ,{"APP_ENV":"development","ROOMROUTE_PORT":str(self.port),"ROOMROUTE_PUBLIC_URL":self.base},clear=False)
+        self.env.start()
+        self.thread=threading.Thread(target=self.http.serve_forever,daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.http.shutdown(); self.http.server_close(); self.thread.join(timeout=2)
+        self.env.stop(); server.DB=self.old_db; self.tempdir.cleanup()
+
+    def call(self,path,method="GET",data=None,cookies=None,csrf=None):
+        headers={"Origin":self.base}
+        if data is not None: headers["Content-Type"]="application/json"
+        if csrf: headers["X-CSRF-Token"]=csrf
+        request=urllib.request.Request(self.base+path,data=json.dumps(data).encode() if data is not None else None,headers=headers,method=method)
+        opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies)) if cookies is not None else urllib.request.build_opener()
+        try:
+            with opener.open(request,timeout=4) as response:
+                return response.status,json.loads(response.read()) if response.status!=204 else {}
+        except urllib.error.HTTPError as error:
+            return error.code,json.loads(error.read())
+        except urllib.error.URLError as error:
+            if getattr(error.reason,"winerror",None)==10013: self.skipTest("Sandbox does not permit local test sockets")
+            raise
+
+    def create_verified_account(self,email,role):
+        status,result=self.call("/api/auth/register","POST",{"name":"Test User","email":email,"password":"a-strong-test-password","role":role})
+        self.assertEqual(status,201,result)
+        with server.db_session() as db:
+            body=db.execute("SELECT body FROM email_outbox WHERE recipient=? ORDER BY id DESC LIMIT 1",(email,)).fetchone()["body"]
+        token=re.search(r"[?]verify=([^\s]+)",body).group(1)
+        status,blocked=self.call("/api/auth/login","POST",{"email":email,"password":"a-strong-test-password"})
+        self.assertEqual(status,403,blocked)
+        status,result=self.call("/api/auth/verify","POST",{"token":token})
+        self.assertEqual(status,200,result)
+        self.assertEqual(self.call("/api/auth/verify","POST",{"token":token})[0],400)
+        jar=__import__("http.cookiejar").cookiejar.CookieJar()
+        status,result=self.call("/api/auth/login","POST",{"email":email,"password":"a-strong-test-password"},jar)
+        self.assertEqual(status,200,result)
+        self.assertTrue(result["user"]["isVerified"])
+        return jar,result["csrfToken"],result["user"]
+
+    def test_verification_listing_approval_inquiry_report_and_privacy(self):
+        owner_cookies,owner_csrf,owner=self.create_verified_account("owner@example.test","owner")
+        status,created=self.call("/api/listings","POST",{"title":"Bright room near campus","type":"Private room","area":"Dharampeth","rent":11000,"deposit":22000,"furnishing":"Semi furnished","availableFrom":"2026-11-01","parking":True,"electricityIncluded":False,"summary":"A genuine test listing."},owner_cookies,owner_csrf)
+        self.assertEqual(status,201,created)
+        self.assertEqual(created["status"],"pending")
+        self.assertEqual(self.call("/api/listings")[1]["listings"],[])
+
+        moderator_password="moderator-test-password"
+        with server.db_session() as db:
+            db.execute("INSERT INTO accounts(id,email,name,role,password_hash,is_verified) VALUES(?,?,?,?,?,1)",("MOD-test","mod@example.test","Moderator","moderator",server.PASSWORD_HASHER.hash(moderator_password)))
+        mod_cookies=__import__("http.cookiejar").cookiejar.CookieJar()
+        status,moderator=self.call("/api/auth/login","POST",{"email":"mod@example.test","password":moderator_password},mod_cookies)
+        self.assertEqual(status,200,moderator)
+        status,approved=self.call(f"/api/moderation/listings/{created['id']}","POST",{"action":"approve","note":"Checked in test."},mod_cookies,moderator["csrfToken"])
+        self.assertEqual(status,200,approved)
+        self.assertEqual(len(self.call("/api/listings")[1]["listings"]),1)
+
+        renter_cookies,renter_csrf,renter=self.create_verified_account("renter@example.test","student")
+        status,inquiry=self.call("/api/inquiries","POST",{"listingId":created["id"],"message":"Can I visit this room?"},renter_cookies,renter_csrf)
+        self.assertEqual(status,201,inquiry)
+        status,owner_inbox=self.call("/api/inquiries",cookies=owner_cookies)
+        self.assertEqual(status,200)
+        self.assertEqual(owner_inbox[0]["id"],inquiry["id"])
+        status,reported=self.call(f"/api/listings/{created['id']}/report","POST",{"reason":"Misleading information","details":"Test report."},renter_cookies,renter_csrf)
+        self.assertEqual(status,201,reported)
+        reports=self.call("/api/moderation/reports",cookies=mod_cookies)[1]
+        self.assertEqual(len(reports),1)
+        self.assertEqual(self.call(f"/api/moderation/reports/{reports[0]['id']}","POST",{"status":"dismissed"},mod_cookies,moderator["csrfToken"])[0],200)
+
+        status,export=self.call("/api/account/export",cookies=renter_cookies)
+        self.assertEqual(status,200)
+        self.assertEqual(export["account"]["email"],renter["email"])
+        self.call("/api/auth/password-reset/request","POST",{"email":renter["email"]})
+        with server.db_session() as db:
+            reset_body=db.execute("SELECT body FROM email_outbox WHERE recipient=? ORDER BY id DESC LIMIT 1",(renter["email"],)).fetchone()["body"]
+        reset_token=re.search(r"[?]reset=([^\s]+)",reset_body).group(1)
+        new_password="a-new-strong-password"
+        self.assertEqual(self.call("/api/auth/password-reset/complete","POST",{"token":reset_token,"password":new_password})[0],200)
+        self.assertEqual(self.call("/api/auth/password-reset/complete","POST",{"token":reset_token,"password":new_password})[0],400)
+        self.assertEqual(self.call("/api/auth/login","POST",{"email":renter["email"],"password":"a-strong-test-password"})[0],401)
+        renter_cookies=__import__("http.cookiejar").cookiejar.CookieJar()
+        status,new_session=self.call("/api/auth/login","POST",{"email":renter["email"],"password":new_password},renter_cookies)
+        self.assertEqual(status,200,new_session)
+        status,deleted=self.call("/api/account/delete","POST",{"password":new_password},renter_cookies,new_session["csrfToken"])
+        self.assertEqual(status,200,deleted)
+        with server.db_session() as db:
+            self.assertIsNone(db.execute("SELECT id FROM accounts WHERE id=?",(renter["id"],)).fetchone())
+            self.assertIsNone(db.execute("SELECT id FROM users WHERE id=?",(renter["id"],)).fetchone())
+
+
+class PostgreSQLBackendTests(unittest.TestCase):
+    def test_postgresql_schema_transactions_rows_and_redis_limits(self):
+        url=os.environ.get("TEST_POSTGRES_URL")
+        if not url: self.skipTest("TEST_POSTGRES_URL is not configured")
+        old_url,old_flag,old_pool=server.DATABASE_URL,server.IS_POSTGRES,server._pg_pool
+        server.DATABASE_URL=url; server.IS_POSTGRES=True; server._pg_pool=None
+        suffix=__import__("secrets").token_hex(6)
+        owner_id=f"TEST-OWN-{suffix}"; user_id=f"TEST-USR-{suffix}"; listing_id=f"TEST-RR-{suffix}"
+        try:
+            server.init_db()
+            with server.db_session() as db:
+                db.execute("INSERT INTO owners(id,name,email,is_sample) VALUES(?,?,?,0)",(owner_id,"DB Test Owner",f"owner-{suffix}@example.test"))
+                db.execute("INSERT INTO users(id,name,email,role,occupation,budget,is_sample) VALUES(?,?,?,?,?,?,0)",(user_id,"DB Test Renter",f"renter-{suffix}@example.test","student","student",10000))
+                db.execute("INSERT INTO accounts(id,email,name,role,password_hash,is_verified) VALUES(?,?,?,?,?,1)",(owner_id,f"owner-{suffix}@example.test","DB Test Owner","owner","hash"))
+                db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)",(listing_id,owner_id,"Postgres test listing","Private room",10000,20000,"Dharampeth","Semi furnished",0,0,"2026-11-01","https://example.test/room.jpg","Postgres test","[]"))
+                listing=db.execute("SELECT id,status FROM listings WHERE id=?",(listing_id,)).fetchone()
+                self.assertEqual(listing[0],listing_id)
+                self.assertEqual(listing["status"],"pending")
+                inquiry_id=db.execute("INSERT INTO inquiries(listing_id,student_id,message) VALUES(?,?,?) RETURNING id",(listing_id,user_id,"Test inquiry message")).fetchone()[0]
+                self.assertGreater(inquiry_id,0)
+                server.queue_email(db,f"owner-{suffix}@example.test","Test outbox","Delivery test")
+            handler=object.__new__(server.Handler); handler.client_address=("127.0.0.1",99); handler.headers={}
+            redis_url=os.environ.get("TEST_REDIS_URL")
+            if redis_url:
+                with patch.dict(os.environ,{"REDIS_URL":redis_url,"APP_ENV":"production"}):
+                    action=f"integration-{suffix}"
+                    with server.db_session() as db:
+                        self.assertTrue(server.Handler.allow_write(handler,db,action,1,60))
+                        self.assertFalse(server.Handler.allow_write(handler,db,action,1,60))
+        finally:
+            with patch.dict(os.environ,{"APP_ENV":"development","SMTP_HOST":""}):
+                try:
+                    if server._pg_pool is not None:
+                        with server.db_session() as db:
+                            db.execute("DELETE FROM inquiries WHERE listing_id=?",(listing_id,))
+                            db.execute("DELETE FROM listings WHERE id=?",(listing_id,))
+                            db.execute("DELETE FROM email_outbox WHERE recipient LIKE ?",(f"owner-{suffix}@example.test",))
+                            db.execute("DELETE FROM users WHERE id=?",(user_id,))
+                            db.execute("DELETE FROM accounts WHERE id=?",(owner_id,))
+                            db.execute("DELETE FROM owners WHERE id=?",(owner_id,))
+                except Exception:
+                    pass
+            if server._pg_pool is not None: server._pg_pool.close()
+            server.DATABASE_URL,server.IS_POSTGRES,server._pg_pool=old_url,old_flag,old_pool
 
     def test_write_rate_limit_is_enforced_per_action_and_ip(self):
         db = sqlite3.connect(":memory:")

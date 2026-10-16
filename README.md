@@ -1,41 +1,56 @@
-# RoomRoute prototype
+# RoomRoute
 
-A local RoomRoute product preview for finding student rooms and flats in Nagpur, Maharashtra.
+RoomRoute is a Nagpur rental search service for student rooms and flats. The repository includes a clearly identified synthetic preview dataset plus an owner/renter service backend. Synthetic records are not real rentals, contacts, reviews, or users.
 
-## Run the working local preview
+## Run the preview
 
-Run the local server from this folder:
+For the quickest local run, Python 3.12+ is required:
 
 ```powershell
+python -m pip install -r requirements.txt
+python server.py --seed-sample-data
 python server.py
 ```
 
-Then visit `http://127.0.0.1:8765`.
+Open <http://127.0.0.1:8765>. This direct command uses a local SQLite file for isolated development. If SMTP is not configured, verification/recovery links are written to that local server's terminal output. Do not expose this mode to the internet.
 
-To load the synthetic starter records into an empty local database:
+## Run the service stack locally
 
-```powershell
-python server.py --seed-sample-data
-```
-
-To remove only records marked as sample data after real records have been added:
+Docker Compose starts the app with PostgreSQL, Redis, and a local Mailpit inbox. The app binds to loopback only.
 
 ```powershell
-python server.py --remove-sample-data
+docker compose up --build
 ```
 
-The local database is `roomroute.sqlite3`. Back it up before removal. Normal server startup never seeds records automatically. `APP_ENV=production` and non-loopback bind addresses are deliberately rejected while production authentication, PostgreSQL, and deployment protections are unfinished.
+Open the app at <http://localhost:8765> and the local email inbox at <http://localhost:8025>. Account verification and password-reset emails appear in Mailpit. Load the fictional inventory with:
 
-## Current preview features
+```powershell
+docker compose exec app python server.py --seed-sample-data
+```
 
-- 50 fictional owners, each with one fictional room or flat listing.
-- 200 fictional renter profiles: 140 students and 60 employees.
-- Search by Nagpur neighborhood, property type, budget, furnishing, parking, and electricity costs.
-- Searchable listing details and a shortlist saved in browser storage.
-- Local owner/renter registration and sign-in with owner-only workspace access.
-- Owner form that creates a listing in SQLite and immediately makes it searchable.
-- Inquiry form that saves messages about user-created listings to SQLite; only that listing's owner can see them in the inbox. Fictional sample listings reject inquiries.
-- Responsive layout for mobile and desktop.
+The sample owners, listings, and renter profiles are synthetic and have no credentials. Their listings are explicitly labelled and cannot receive inquiries. Remove only sample rows with `docker compose exec app python server.py --remove-sample-data`.
 
-The included 50 owner/listing records and 200 renter profiles (140 students, 60 employees) are fictional sample data and have no sign-in credentials. New owner/renter accounts, listings, and inquiries persist in the local database. Sample owners cannot receive messages. For a real user-created listing, an inquiry appears only in the local owner's inbox; this preview does not send email or SMS. The service binds to loopback only and does not expose data to the internet. Photos load from Unsplash and require an internet connection. This is not a public rental service. See [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) and [SECURITY_REVIEW.md](SECURITY_REVIEW.md) before considering a launch.
+## Service features
+
+- PostgreSQL-backed data with a bounded connection pool when `DATABASE_URL` is set; production refuses to start without PostgreSQL.
+- Shared Redis fixed-window throttles for registration, listing creation, inquiries, and password-reset email requests.
+- Argon2 password storage, verified-email requirement, expiring single-use verification and password-reset tokens, secure production cookies, CSRF checks, and session revocation on password reset.
+- Inquiry records saved to PostgreSQL and queued in a durable SMTP outbox. The outbox retries failures and uses PostgreSQL row locks so replicas do not send the same pending message concurrently.
+- New owner listings remain private until a moderator approves them. Authenticated users can report listings; moderators can review or dismiss reports.
+- Signed-in users can download an account export and delete their account and associated listings, inquiries, reports, sessions, and queued email.
+- Docker image runs as a non-root user; Compose health checks gate app startup on PostgreSQL and Redis readiness.
+
+Create the first moderator interactively after starting the service:
+
+```powershell
+docker compose exec app python server.py --create-moderator
+```
+
+## Production deployment
+
+Deploy the image to a container platform and provide managed PostgreSQL, Redis, and a verified SMTP sender through its secret manager. Set `APP_ENV=production`, `DATABASE_URL`, `REDIS_URL`, `ROOMROUTE_PUBLIC_URL` (`https://...`), `ROOMROUTE_ALLOWED_HOSTS`, `SMTP_HOST`, `SMTP_PORT=587`, `SMTP_STARTTLS=1`, and `SMTP_FROM`. Set `SMTP_USERNAME` and `SMTP_PASSWORD` where the provider requires authentication. Startup refuses production mode if required configuration is missing. HTTPS termination and DNS must be configured at the hosting provider or trusted reverse proxy. If using a proxy, set `ROOMROUTE_TRUST_PROXY_CIDRS` to its actual source networks; forwarded client IPs are ignored otherwise.
+
+Never use the Compose default passwords or Mailpit for a public deployment. Use managed encrypted database/Redis services, backups with restore drills, alerting, log retention, and a reviewed domain email setup. Do not seed fictional data in a real environment. The app does not provision a cloud host, DNS, provider accounts, SMTP credentials, legal terms, or privacy notices for you.
+
+See [DEPLOYMENT.md](DEPLOYMENT.md), [SECURITY.md](SECURITY.md), [SECURITY_REVIEW.md](SECURITY_REVIEW.md), and [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) before a public launch.
 

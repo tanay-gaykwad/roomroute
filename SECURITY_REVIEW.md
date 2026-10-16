@@ -1,7 +1,7 @@
 # RoomRoute security review
 
-**Reviewed:** 2026-10-17  
-**Scope:** the checked-in Python HTTP server, browser client, SQLite schema, sample-data lifecycle, and public repository contents.  
+**Reviewed:** 2026-10-17
+**Scope:** the checked-in Python HTTP server, browser client, SQLite schema, sample-data lifecycle, and public repository contents.
 **Outcome:** not approved for public service. This is a code review, not a penetration test or legal review.
 
 ## Findings addressed in this change

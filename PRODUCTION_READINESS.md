@@ -1,34 +1,31 @@
 # Production readiness
 
-**Release decision: NO-GO for public production or real user data.** This repository remains a local preview. The server intentionally refuses `APP_ENV=production` and refuses non-loopback bind addresses. Do not bypass those checks.
+**Release decision: not cleared for public launch yet.** The named software gaps have implementation paths now, and the repository includes a production-configured backend mode and deployment container. A code change cannot provision hosting, set provider secrets, prove owner identity, write the operator's actual legal commitments, or substitute for a security and restore review.
 
-## Changes in this review
+## Implemented
 
-- Sample seeding now refuses to run if any non-sample owner, renter, or listing records exist. It no longer relabels user records as samples.
-- Sample listings cannot accept inquiries; the interface identifies them as fictional and shows no contact form.
-- Public owner data is limited to owners with active listings.
-- JSON request bodies must be bounded objects with a valid content type and length. Writes for registration, inquiries, and listings have a local per-IP limit.
-- Session-cookie security no longer trusts the client-supplied `X-Forwarded-Proto` header. Production cookie naming/security and HTTPS-only Origin checks are prepared, but production startup remains disabled.
-- Host and Origin checks use an explicit local or configured allowlist; a request's `Host` header cannot define its own trust boundary.
-- Added a database health endpoint and tightened listing input validation.
-- The earlier production guard is retained because these code changes do not provide a production database, verified identity, message delivery, moderation, or launch operations.
+- PostgreSQL is used when `DATABASE_URL` is configured; production startup refuses SQLite. Schema initialization is additive and recorded in `schema_migrations`.
+- Redis uses an atomic Lua fixed-window counter for shared write limits. Production refuses startup without Redis.
+- Email verification and password reset use hashed, expiring, single-use tokens. Login is blocked until the account is verified; reset revokes active sessions.
+- Inquiries are committed to the database and a durable SMTP outbox. Failures retry with bounded backoff. PostgreSQL row locking avoids duplicate claims by concurrently running outbox workers.
+- New listings are private in `pending` state. Moderators approve/reject/pause listings and review user reports. A moderator is created interactively, not through public signup.
+- Signed-in users can export account data and delete their account, listings, inquiries, reports, sessions, tokens, auth-attempt email traces, and queued email.
+- `Dockerfile`, local Postgres/Redis/Mailpit Compose stack, health checks, bounded request threads, and CI container build.
 
-## Required before accepting real users
+## Required before real users
 
-1. **Replace SQLite for service use.** Use PostgreSQL, managed credentials, schema migrations, connection pooling, automated encrypted backups, and a tested restore. Add distributed rate limiting and a shared session store before running multiple instances.
-2. **Complete identity flows.** Add verified email with expiring single-use tokens, password reset, account recovery, session/device management, secure account deletion, and independent authentication review. Unverified accounts must not publish listings or send inquiries.
-3. **Protect inquiry delivery.** Choose and configure an email or in-app notification provider, delivery retries, bounce handling, anti-spam controls, abuse reporting, blocking, and retention. The current app only saves local inbox records.
-4. **Support trustworthy listings.** Build owner verification and review queue, owner-controlled listing edit/archive, availability reconfirmation, moderation, controlled image upload/storage, report handling, and audit trails. Do not imply verification or reviews that have not been earned.
-5. **Complete privacy and legal launch work.** Add user-reviewed privacy notice, terms, consent, data export/deletion, contact and grievance routes, retention and incident-response policies, and review of applicable Indian privacy, consumer, rental-advertising, and intermediary requirements. The repository cannot supply accurate legal commitments without the operator's real policies and counsel review.
-6. **Deploy and operate securely.** Select a host and domain; configure HTTPS, trusted-host/proxy settings, managed secrets, WAF/edge limits, monitoring, alerting, dependency scanning, CI/CD, vulnerability reporting, backups, rollback, and incident response. Run a third-party security review before production.
-7. **Replace example inventory.** Obtain consent and verify owners, addresses, photos, availability, rent, deposits, utility rules, and occupancy terms. Remove sample data only after confirming the backup and replacement data.
+1. Choose a hosting provider and domain; configure HTTPS, secrets, database/Redis services, SMTP sender verification, and `ROOMROUTE_ALLOWED_HOSTS`. Then confirm `/healthz`, email delivery, session cookies, and fail-closed behavior in that actual environment.
+2. Configure encrypted backups, restore drills, monitoring, alerting, log access/retention, incident response, and deployment rollback. No cloud account or operational monitoring is provisioned here.
+3. Arrange an independent security review. The code has not had a penetration test. In particular, review the standard-library threaded HTTP server and consider replacing it with a hardened production HTTP stack before a high-traffic public launch.
+4. Add an owner identity/ownership verification process and a controlled image upload service. Email verification and manual listing review do not prove a poster owns a property; current listing photos are not uploaded or verified by the service.
+5. Have the operator prepare accurate terms, privacy notice, consent, retention, grievance contact, and incident procedures and obtain qualified review for the actual Indian service. The account export/deletion endpoints are technical operations, not a complete legal privacy program.
+6. Replace the fictional inventory with owner-authorized, checked listings and accurate photos, price, availability, utilities, and safety details. Never represent sample data as real supply or traction.
 
-## Current operational limits
+## Current constraints
 
-- Loopback-only Python `ThreadingHTTPServer`; not a production-grade ASGI/WSGI server.
-- SQLite data and rate limits are local to one process and one computer.
-- No email verification, password recovery, email/SMS delivery, image upload, moderation workflow, account deletion/export, or real owner verification.
-- The included 50 listings and 200 renter profiles are fictional. They are not evidence of live supply, reviews, verified owners, or market demand.
-
-Use [SECURITY_REVIEW.md](SECURITY_REVIEW.md) as the review record. The service should remain local until each release gate has an owner, implementation, and verification evidence.
+- Direct `python server.py` without `DATABASE_URL` is a SQLite local preview. Do not expose it publicly.
+- The Docker Compose stack is local development only. Its default passwords and Mailpit are not for a public environment.
+- Moderators must triage every new listing and report. There is no automatic owner-document verification or reviewer staffing system.
+- Inquiry delivery is email notification plus an in-app owner inbox. SMS, bounce/suppression management, direct reply from email, and customer support are not configured.
+- No cloud deployment target, provider credentials, DNS, real inventory, policy text, or independent audit is supplied by the repository.
 

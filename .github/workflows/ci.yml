@@ -12,6 +12,29 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: roomroute_test
+          POSTGRES_USER: roomroute
+          POSTGRES_PASSWORD: roomroute-test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U roomroute -d roomroute_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -25,10 +48,17 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Run tests
         run: python -m unittest discover -v
+      - name: Check PostgreSQL and Redis service paths
+        env:
+          TEST_POSTGRES_URL: postgresql://roomroute:roomroute-test@localhost:5432/roomroute_test
+          TEST_REDIS_URL: redis://localhost:6379/0
+        run: python -m unittest test_server.PostgreSQLBackendTests -v
       - name: Check Python syntax
         run: python -m py_compile server.py test_server.py
       - name: Check browser JavaScript syntax
         run: node --check app.js
+      - name: Build container image
+        run: docker build --tag roomroute:ci .
       - name: Audit dependencies
         run: |
           python -m pip install pip-audit

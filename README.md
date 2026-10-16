@@ -34,8 +34,8 @@ The local database is `roomroute.sqlite3`. Back it up before removal. Normal ser
 - Searchable listing details and a shortlist saved in browser storage.
 - Local owner/renter registration and sign-in with owner-only workspace access.
 - Owner form that creates a listing in SQLite and immediately makes it searchable.
-- Inquiry form that saves messages to SQLite; only the listing owner can see them in the inbox.
+- Inquiry form that saves messages about user-created listings to SQLite; only that listing's owner can see them in the inbox. Fictional sample listings reject inquiries.
 - Responsive layout for mobile and desktop.
 
-The included 50 owner/listing records and 200 renter profiles (140 students, 60 employees) are fictional sample data and have no sign-in credentials. New owner/renter accounts, listings, and inquiries persist in the local database. The service binds to loopback only and does not contact owners or expose data to the internet. Photos load from Unsplash and require an internet connection. The local account flow is not a public identity or email verification system. This is not yet a public rental service; see [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) for launch blockers.
+The included 50 owner/listing records and 200 renter profiles (140 students, 60 employees) are fictional sample data and have no sign-in credentials. New owner/renter accounts, listings, and inquiries persist in the local database. Sample owners cannot receive messages. For a real user-created listing, an inquiry appears only in the local owner's inbox; this preview does not send email or SMS. The service binds to loopback only and does not expose data to the internet. Photos load from Unsplash and require an internet connection. This is not a public rental service. See [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) and [SECURITY_REVIEW.md](SECURITY_REVIEW.md) before considering a launch.
 

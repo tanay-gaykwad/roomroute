@@ -6,10 +6,11 @@
 
 ## Findings addressed in this change
 
-- **Sample-data deletion could affect real renter accounts (high):** seeding previously marked every existing row as sample. It now refuses to seed any database with non-sample owners, users, or listings; it leaves existing rows unchanged.
+- **Sample-data deletion could affect real renter accounts (high):** seeding previously marked every existing row as sample. It now refuses to seed any database with real owner, renter, listing, or account rows; it leaves existing rows unchanged.
 - **Fictional listings accepted inquiries (medium):** those messages could never reach a real owner. The API now rejects them and the UI labels the owner/listing as fictional.
 - **Unlisted account names were exposed by the public owner API (medium):** public owner records are now limited to owners with active listings.
 - **Cookie transport relied on a client-controlled forwarded header (high if deployed behind a proxy):** cookie security now derives only from server configuration; production uses a `__Host-` cookie and HTTPS-only Origin checks. Public startup remains blocked.
+- **Origin validation trusted the request Host header (high for a loopback service exposed to DNS rebinding):** the preview now checks an explicit host allowlist before serving API requests and uses that allowlist for Origin validation.
 - **Unbounded/non-object JSON and weak write throttling (medium):** request bodies are size/content-type/object checked; registration, inquiry, and listing writes have local per-IP limits.
 - **Listing values were incompletely validated (medium):** property type, area, furnishing, date, text bounds, and boolean fields are checked before insert.
 

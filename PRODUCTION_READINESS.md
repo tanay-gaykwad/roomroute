@@ -9,6 +9,7 @@
 - Public owner data is limited to owners with active listings.
 - JSON request bodies must be bounded objects with a valid content type and length. Writes for registration, inquiries, and listings have a local per-IP limit.
 - Session-cookie security no longer trusts the client-supplied `X-Forwarded-Proto` header. Production cookie naming/security and HTTPS-only Origin checks are prepared, but production startup remains disabled.
+- Host and Origin checks use an explicit local or configured allowlist; a request's `Host` header cannot define its own trust boundary.
 - Added a database health endpoint and tightened listing input validation.
 - The earlier production guard is retained because these code changes do not provide a production database, verified identity, message delivery, moderation, or launch operations.
 

@@ -1,23 +1,33 @@
-# Production readiness status
+# Production readiness
 
-**Status: local product preview; not safe to deploy as a public rental service.** The current server refuses production mode and non-loopback addresses by design.
+**Release decision: NO-GO for public production or real user data.** This repository remains a local preview. The server intentionally refuses `APP_ENV=production` and refuses non-loopback bind addresses. Do not bypass those checks.
 
-## What is already separated
+## Changes in this review
 
-- Every seeded owner, renter profile, and listing carries an `is_sample` marker.
-- The starter dataset is loaded explicitly with `python server.py --seed-sample-data`; normal startup does not recreate it.
-- `python server.py --remove-sample-data` deletes only marked sample records and their dependent inquiries.
-- The SQLite file is local-only and excluded from source control.
+- Sample seeding now refuses to run if any non-sample owner, renter, or listing records exist. It no longer relabels user records as samples.
+- Sample listings cannot accept inquiries; the interface identifies them as fictional and shows no contact form.
+- Public owner data is limited to owners with active listings.
+- JSON request bodies must be bounded objects with a valid content type and length. Writes for registration, inquiries, and listings have a local per-IP limit.
+- Session-cookie security no longer trusts the client-supplied `X-Forwarded-Proto` header. Production cookie naming/security and HTTPS-only Origin checks are prepared, but production startup remains disabled.
+- Added a database health endpoint and tightened listing input validation.
+- The earlier production guard is retained because these code changes do not provide a production database, verified identity, message delivery, moderation, or launch operations.
 
-## Required before a public launch
+## Required before accepting real users
 
-1. **Accounts and authorization:** a first local account flow now uses Argon2id password hashes, HttpOnly/SameSite cookies, CSRF and Origin checks, login throttling, and owner/renter role checks. Before launch, add verified-email flows, password recovery, stronger distributed rate limits, session revocation controls, and independent security review.
-2. **Production database:** PostgreSQL, schema migrations, encrypted backups, restore practice, retention policy, and a tested sample-data removal migration.
-3. **Privacy and contact safety:** consent and privacy notice, data export/deletion, message retention rules, private contact details, and a data-breach response plan.
-4. **Abuse controls:** production edge rate limits, spam protection, reporting/blocking, listing review queue, dispute handling, and an accountable moderation process. Current login throttling is local to the SQLite file and does not protect a horizontally scaled service.
-5. **Listing integrity:** real owner onboarding, availability reconfirmation, truthful verification criteria, photo upload/storage controls, and no fabricated ratings or activity.
-6. **Deployment and operations:** HTTPS, managed secrets, security headers, dependency updates, error monitoring, audit logs, health checks, CI, restore testing, and documented incident response.
-7. **Nagpur launch review:** check local requirements for rental advertising, privacy, reviews, consumer disclosures, and any intermediary obligations before accepting real users.
+1. **Replace SQLite for service use.** Use PostgreSQL, managed credentials, schema migrations, connection pooling, automated encrypted backups, and a tested restore. Add distributed rate limiting and a shared session store before running multiple instances.
+2. **Complete identity flows.** Add verified email with expiring single-use tokens, password reset, account recovery, session/device management, secure account deletion, and independent authentication review. Unverified accounts must not publish listings or send inquiries.
+3. **Protect inquiry delivery.** Choose and configure an email or in-app notification provider, delivery retries, bounce handling, anti-spam controls, abuse reporting, blocking, and retention. The current app only saves local inbox records.
+4. **Support trustworthy listings.** Build owner verification and review queue, owner-controlled listing edit/archive, availability reconfirmation, moderation, controlled image upload/storage, report handling, and audit trails. Do not imply verification or reviews that have not been earned.
+5. **Complete privacy and legal launch work.** Add user-reviewed privacy notice, terms, consent, data export/deletion, contact and grievance routes, retention and incident-response policies, and review of applicable Indian privacy, consumer, rental-advertising, and intermediary requirements. The repository cannot supply accurate legal commitments without the operator's real policies and counsel review.
+6. **Deploy and operate securely.** Select a host and domain; configure HTTPS, trusted-host/proxy settings, managed secrets, WAF/edge limits, monitoring, alerting, dependency scanning, CI/CD, vulnerability reporting, backups, rollback, and incident response. Run a third-party security review before production.
+7. **Replace example inventory.** Obtain consent and verify owners, addresses, photos, availability, rent, deposits, utility rules, and occupancy terms. Remove sample data only after confirming the backup and replacement data.
 
-The seeded records are suitable for exercising UI and data workflows. They are not evidence of real Nagpur rental supply, verified owners, user reviews, or customer demand.
+## Current operational limits
+
+- Loopback-only Python `ThreadingHTTPServer`; not a production-grade ASGI/WSGI server.
+- SQLite data and rate limits are local to one process and one computer.
+- No email verification, password recovery, email/SMS delivery, image upload, moderation workflow, account deletion/export, or real owner verification.
+- The included 50 listings and 200 renter profiles are fictional. They are not evidence of live supply, reviews, verified owners, or market demand.
+
+Use [SECURITY_REVIEW.md](SECURITY_REVIEW.md) as the review record. The service should remain local until each release gate has an owner, implementation, and verification evidence.
 

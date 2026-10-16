@@ -1,32 +1,32 @@
 # RoomRoute security review
 
 **Reviewed:** 2026-10-17
-**Scope:** the checked-in Python HTTP server, browser client, SQLite schema, sample-data lifecycle, and public repository contents.
-**Outcome:** not approved for public service. This is a code review, not a penetration test or legal review.
+**Scope:** Python HTTP service, PostgreSQL/SQLite schema paths, Redis write limits, account flows, email outbox, listing/report moderation, privacy endpoints, browser UI, and container setup.
+**Outcome:** implementation review only. No penetration test or independent audit has been performed.
 
-## Findings addressed in this change
+## Controls added
 
-- **Sample-data deletion could affect real renter accounts (high):** seeding previously marked every existing row as sample. It now refuses to seed any database with real owner, renter, listing, or account rows; it leaves existing rows unchanged.
-- **Fictional listings accepted inquiries (medium):** those messages could never reach a real owner. The API now rejects them and the UI labels the owner/listing as fictional.
-- **Unlisted account names were exposed by the public owner API (medium):** public owner records are now limited to owners with active listings.
-- **Cookie transport relied on a client-controlled forwarded header (high if deployed behind a proxy):** cookie security now derives only from server configuration; production uses a `__Host-` cookie and HTTPS-only Origin checks. Public startup remains blocked.
-- **Origin validation trusted the request Host header (high for a loopback service exposed to DNS rebinding):** the preview now checks an explicit host allowlist before serving API requests and uses that allowlist for Origin validation.
-- **Unbounded/non-object JSON and weak write throttling (medium):** request bodies are size/content-type/object checked; registration, inquiry, and listing writes have local per-IP limits.
-- **Listing values were incompletely validated (medium):** property type, area, furnishing, date, text bounds, and boolean fields are checked before insert.
+- Production mode requires a PostgreSQL URL, Redis, SMTP with STARTTLS, HTTPS public URL, and an explicit allowed-host list. The local preview remains loopback-only unless the explicit container flag is set.
+- Redis Lua increments/expiry give concurrent app workers a shared atomic fixed-window limit. Database-backed login attempt tracking uses PostgreSQL in service mode.
+- Session cookies use a random opaque token whose SHA-256 digest is stored server-side. Production uses `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, and the `__Host-` prefix. Mutating authenticated actions require matching Origin and CSRF token.
+- Verification and reset tokens are random, hashed at rest, time-limited, and single-use. Reset revokes sessions. Login requires verified email.
+- SMTP work is persisted before delivery. Failures retry with backoff; email message content is cleared after successful delivery and sent records are deleted after 14 days.
+- New listings start pending; public reads include active listings only. Moderator endpoints require a moderator role. Reports are restricted to active sessions.
+- Export and deletion endpoints require an authenticated session; deletion also verifies the current password and removes linked platform records.
+- The container runs as a non-root account, local Compose ports bind to loopback, request bodies are bounded, concurrent request threads are capped, and sockets have read timeouts.
 
-## Open launch blockers
+## Remaining risks and operating requirements
 
-- No verified-email or password-recovery flow. `is_verified` exists in the schema but is not an enforceable user journey. Do not permit real public registration until verification is implemented and required for protected actions.
-- SQLite and local per-process throttles are not appropriate for a horizontally scaled or resilient public service. There are no migrations, managed backups, or restore evidence.
-- Inquiries are database records only. No owner notifications, message delivery guarantees, spam controls, block/report tools, or moderation operations exist.
-- Owners cannot upload controlled property photos, manage listing lifecycle, prove ownership, or reconfirm availability. Example imagery/data cannot substantiate the advertised properties.
-- Privacy notice/terms, data export/deletion, retention, grievance process, and incident response are not implemented. India-specific legal review needs the operator's real service policies and qualified review.
-- No production host/domain, secrets manager, monitoring, alerts, CI security scan, tested backups, or independent penetration test is configured.
+- The application has not been penetration-tested. The synchronous `ThreadingHTTPServer` is a small service implementation; replace it with a hardened HTTP stack and review reverse-proxy behavior before broad public traffic.
+- Email ownership confirmation does not establish that an owner controls or is authorized to rent the advertised property. Add evidence-based owner checks and ongoing listing reconfirmation.
+- No user photo upload/storage pipeline is implemented. Existing display images are synthetic stock images; do not publish real listings using those images as evidence.
+- SMTP retries are at-least-once: a process can crash after the provider accepts a message and before the database marks it delivered. Some duplicate notices can occur. Configure provider bounce/suppression monitoring.
+- Redis outage causes write limiting to fail closed. Monitor Redis availability and alert on HTTP 5xx and outbox age.
+- Behind a proxy, set only the real proxy source CIDRs in `ROOMROUTE_TRUST_PROXY_CIDRS`. The service ignores `X-Forwarded-For` from untrusted peers. Set correct TLS termination and host forwarding at the proxy.
+- Database backups, restore tests, managed secrets, DNS, SMTP reputation, alerts, retention policy, privacy/terms, grievance handling, and incident procedures require operator setup.
+- Synthetic sample records are not actual user accounts or listings. The app blocks sample listing inquiries and seeding a database containing real data.
 
-## Release controls
+## Verification performed for this change
 
-- `APP_ENV=production` and non-loopback bind addresses are rejected by design.
-- Never publish real renter/owner records in this repository. The SQLite database is ignored by Git.
-- Keep sample labels visible. Seed data must not be represented as actual inventory, verified ownership, ratings, or activity.
-- Re-review this document and the launch checklist after completing each blocker; do not flip the production guard as a substitute for the missing controls.
+Local unit tests cover bounded request bodies, sample-data safety, cookies, Origin/Host validation, and local throttling. CI installs declared dependencies, runs the unit suite and static syntax checks, audits Python dependencies, and builds the Docker image. A live PostgreSQL/Redis/SMTP deployment has not been exercised in this workspace.
 

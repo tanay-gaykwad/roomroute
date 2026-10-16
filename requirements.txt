@@ -1,4 +1,4 @@
-argon2-cffi>=23.1,<26
+argon2-cffi>=25.1.0,<26
 psycopg[binary,pool]>=3.2,<4
 redis>=5,<7
 

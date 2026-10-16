@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f7f2" />
+    <meta name="description" content="Find a room or flat in Nagpur with clear costs, real details, and less door-to-door searching." />
+    <title>RoomRoute — Find your place in Nagpur</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css?v=20261017c" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="RoomRoute home"><span class="brand-icon">R</span><span>roomroute<span class="brand-dot">.</span></span></a>
+      <nav class="main-nav" aria-label="Main navigation"><a class="nav-link active" href="#homes">Find a place</a><a class="nav-link" href="#how">How it works</a></nav>
+      <div class="top-actions"><button class="saved-link" id="savedToggle"><span>♡</span> Saved <b id="savedCount">0</b></button><button class="owner-button" id="ownerMode"><span class="owner-plus">＋</span> List your place</button><button class="avatar" id="avatarButton" aria-label="Sign in or create an account">A</button></div>
+      <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
+    </header>
+    <main>
+      <section class="hero" id="homes">
+        <div class="hero-copy"><div class="eyebrow"><span class="live-dot"></span> MADE FOR YOUR NEXT CHAPTER <span class="city-pill">NAGPUR, MH</span></div><h1>A place to land.<br /><em>A city to grow.</em></h1><p>Find a room or flat that fits your life, your plans, and your budget — without visiting every door.</p></div>
+        <div class="hero-art" aria-hidden="true"><div class="sun"></div><div class="building building-back"></div><div class="building building-front"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="plant">✳</div><div class="art-label">A better way to find home <span>↗</span></div></div>
+        <div class="search-panel"><label class="search-field location-field"><span class="field-icon">⌖</span><span class="field-label">WHERE</span><select id="areaFilter" aria-label="Choose Nagpur area"><option value="">All Nagpur</option></select></label><label class="search-field"><span class="field-icon">⌂</span><span class="field-label">I'M LOOKING FOR</span><select id="typeFilter" aria-label="Property type"><option value="">Rooms & flats</option><option value="Private room">Private room</option><option value="Shared room">Shared room</option><option value="1 BHK flat">1 BHK flat</option><option value="2 BHK flat">2 BHK flat</option></select></label><label class="search-field budget-field"><span class="field-icon">₹</span><span class="field-label">MONTHLY BUDGET</span><select id="budgetFilter" aria-label="Maximum monthly budget"><option value="">Any budget</option><option value="8000">Up to ₹8,000</option><option value="12000">Up to ₹12,000</option><option value="18000">Up to ₹18,000</option><option value="25000">Up to ₹25,000</option></select></label><button class="search-button" id="searchButton">Find my place <span>→</span></button></div>
+      </section>
+      <section class="trust-strip"><div><span class="trust-icon">✧</span><span><b>Clear costs</b><small>Rent, deposit & utilities upfront</small></span></div><div><span class="trust-icon">⌖</span><span><b>Nagpur local</b><small>Neighborhoods near work & campus</small></span></div><div><span class="trust-icon">♡</span><span><b>Made for real life</b><small>Rooms and whole flats, together</small></span></div><div class="trust-note">A good move starts with a good search.</div></section>
+      <section class="listing-section" id="listingSection"><div class="section-heading"><div><div class="eyebrow small-eyebrow">YOUR NEXT PLACE IS OUT THERE</div><h2 id="resultsTitle">Places to call home <span class="count-pill" id="resultCount">50</span></h2><p>Thoughtful listings, useful details, more time for what’s next.</p><p class="preview-label">RoomRoute preview · listings shown are examples, not live rentals</p></div><div class="sort-wrap"><button class="filter-button" id="filterToggle">☷ <span>Filters</span><b id="filterBadge" hidden>0</b></button><label class="sort-select">Sort by <select id="sortFilter"><option value="recommended">Recommended</option><option value="rent-low">Rent: low to high</option><option value="rent-high">Rent: high to low</option><option value="newest">Recently updated</option></select></label></div></div>
+        <div class="filter-drawer" id="filterDrawer" hidden><label>Room setup<select id="setupFilter"><option value="">Any setup</option><option>Private</option><option>Shared</option></select></label><label>Furnishing<select id="furnishFilter"><option value="">Any</option><option>Fully furnished</option><option>Semi furnished</option><option>Unfurnished</option></select></label><label>Parking<select id="parkingFilter"><option value="">Any</option><option value="yes">Parking available</option></select></label><label>Utilities<select id="utilityFilter"><option value="">Any</option><option value="included">Electricity included</option><option value="separate">Separate electricity bill</option></select></label><button id="clearFilters" class="clear-button">Clear all</button></div>
+        <div class="active-filters" id="activeFilters"></div><div class="listing-grid" id="listingGrid" aria-live="polite"></div><div class="empty-state" id="emptyState" hidden><span>⌂</span><h3>No places match just yet</h3><p>Try widening your budget or clearing a filter.</p><button class="text-button" id="emptyClear">Clear all filters →</button></div><button class="load-more" id="loadMore">Explore more places <span>↓</span></button>
+      </section>
+      <section class="how-section" id="how"><div><div class="eyebrow small-eyebrow">A LITTLE LESS RUNNING AROUND</div><h2>Find your fit,<br /><em>before the visit.</em></h2></div><div class="how-steps"><article><span>01</span><h3>Make it yours</h3><p>Set your budget, area, and the everyday details that matter.</p></article><article><span>02</span><h3>See the whole picture</h3><p>Compare photos, rent, deposit, utilities, and what’s included.</p></article><article><span>03</span><h3>Ask, then go see</h3><p>Shortlist your favorites and contact owners to plan a visit.</p></article></div></section>
+      <section class="owner-cta"><div><div class="eyebrow small-eyebrow">A PLACE TO SHARE?</div><h2>Good tenants start<br />with good details.</h2><p>Show what makes your place feel like home.</p></div><button class="owner-button large" id="ownerCta">List your place <span>→</span></button><div class="cta-spark">✳</div></section>
+    </main>
+    <footer><a class="brand" href="#"><span class="brand-icon">R</span><span>roomroute<span class="brand-dot">.</span></span></a><span>Find your place in Nagpur. Move at your pace.</span><span class="demo-disclaimer">Preview with fictional sample listings and profiles</span></footer>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="modal-backdrop" id="modalBackdrop" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button class="modal-close" id="modalClose" aria-label="Close">×</button><div id="modalContent"></div></section></div>
+    <script src="app.js?v=20261017c"></script>
+  </body>
+</html>
+

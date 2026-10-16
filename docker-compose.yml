@@ -1,0 +1,66 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_ENV: development
+      ROOMROUTE_CONTAINER: "1"
+      ROOMROUTE_HOST: 0.0.0.0
+      ROOMROUTE_PORT: 8765
+      ROOMROUTE_ALLOWED_HOSTS: localhost,127.0.0.1
+      ROOMROUTE_PUBLIC_URL: http://localhost:8765
+      DATABASE_URL: postgresql://roomroute:${POSTGRES_PASSWORD:-roomroute-local-only}@postgres:5432/roomroute
+      REDIS_URL: redis://:${REDIS_PASSWORD:-roomroute-local-only}@redis:6379/0
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_STARTTLS: "0"
+      SMTP_FROM: RoomRoute <no-reply@localhost>
+    ports:
+      - "127.0.0.1:8765:8765"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: roomroute
+      POSTGRES_USER: roomroute
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-roomroute-local-only}
+    volumes:
+      - roomroute-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roomroute -d roomroute"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-roomroute-local-only}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-roomroute-local-only}
+    volumes:
+      - roomroute-redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+
+volumes:
+  roomroute-postgres:
+  roomroute-redis:
+

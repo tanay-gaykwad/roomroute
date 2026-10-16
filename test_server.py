@@ -68,6 +68,14 @@ class PreviewDataSafetyTests(unittest.TestCase):
         with server.db_session() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM users WHERE id='real-user'").fetchone()[0], 1)
 
+    def test_seed_refuses_orphaned_account_rows(self):
+        with server.db_session() as db:
+            db.execute("INSERT INTO accounts(id,email,name,role,password_hash) VALUES('orphan','orphan@example.test','Orphan','student','hash')")
+        with self.assertRaises(RuntimeError):
+            server.seed_sample_data()
+        with server.db_session() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts WHERE id='orphan'").fetchone()[0], 1)
+
 
 class SecurityHeaderTests(unittest.TestCase):
     def test_forwarded_proto_does_not_control_secure_cookie(self):
@@ -94,6 +102,17 @@ class SecurityHeaderTests(unittest.TestCase):
         self.assertFalse(server.Handler.check_origin(handler))
         handler.headers["Origin"] = "https://attacker.example"
         self.assertFalse(server.Handler.check_origin(handler))
+
+    def test_write_rate_limit_is_enforced_per_action_and_ip(self):
+        db = sqlite3.connect(":memory:")
+        db.execute("CREATE TABLE request_limits(id INTEGER PRIMARY KEY, action TEXT, ip_address TEXT, occurred_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        handler = object.__new__(server.Handler)
+        handler.client_address = ("127.0.0.1", 1234)
+        self.assertTrue(server.Handler.allow_write(handler, db, "test", 2, 3600))
+        self.assertTrue(server.Handler.allow_write(handler, db, "test", 2, 3600))
+        self.assertFalse(server.Handler.allow_write(handler, db, "test", 2, 3600))
+        self.assertTrue(server.Handler.allow_write(handler, db, "other", 2, 3600))
+        db.close()
 
 
 if __name__ == "__main__":

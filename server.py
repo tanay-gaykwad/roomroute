@@ -195,6 +195,15 @@ class Handler(SimpleHTTPRequestHandler):
         db.execute("DELETE FROM request_limits WHERE occurred_at < datetime('now','-1 day')")
         return True
 
+    def trusted_host(self):
+        configured = os.environ.get("ROOMROUTE_ALLOWED_HOSTS", "")
+        if os.environ.get("APP_ENV", "development").lower() == "production":
+            allowed = {value.strip().lower() for value in configured.split(",") if value.strip()}
+            return bool(allowed and self.headers.get("Host", "").lower() in allowed)
+        port = os.environ.get("ROOMROUTE_PORT", "8765")
+        allowed = {f"localhost:{port}", f"127.0.0.1:{port}", f"[::1]:{port}"}
+        return self.headers.get("Host", "").lower() in allowed
+
     def session(self, db):
         cookie_name = self.cookie_name()
         raw = next((part.strip().split("=",1)[1] for part in self.headers.get("Cookie", "").split(";") if part.strip().startswith(f"{cookie_name}=")), None)
@@ -240,9 +249,11 @@ class Handler(SimpleHTTPRequestHandler):
         host = self.headers.get("Host")
         parsed = urlparse(origin or "")
         production = os.environ.get("APP_ENV", "development").lower() == "production"
-        return bool(parsed.scheme in ({"https"} if production else {"http", "https"}) and parsed.netloc and host and parsed.netloc.lower() == host.lower())
+        return bool(self.trusted_host() and parsed.scheme in ({"https"} if production else {"http", "https"}) and parsed.netloc and host and parsed.netloc.lower() == host.lower())
 
     def do_GET(self):
+        if not self.trusted_host():
+            return self.send_json({"error": "Host is not allowed."}, 421)
         path = urlparse(self.path).path
         if path == "/healthz":
             try:
@@ -281,6 +292,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            if not self.trusted_host():
+                return self.send_json({"error": "Host is not allowed."}, 421)
             payload = self.body()
             with db_session() as db:
                 if self.path in {"/api/auth/register", "/api/auth/login", "/api/auth/logout"}:

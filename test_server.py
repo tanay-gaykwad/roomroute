@@ -96,12 +96,23 @@ class SecurityHeaderTests(unittest.TestCase):
 
     def test_origin_requires_matching_host_and_valid_scheme(self):
         handler = object.__new__(server.Handler)
-        handler.headers = {"Origin": "https://roomroute.example", "Host": "roomroute.example"}
+        handler.headers = {"Origin": "http://127.0.0.1:8765", "Host": "127.0.0.1:8765"}
         self.assertTrue(server.Handler.check_origin(handler))
         handler.headers["Origin"] = "javascript://roomroute.example"
         self.assertFalse(server.Handler.check_origin(handler))
         handler.headers["Origin"] = "https://attacker.example"
         self.assertFalse(server.Handler.check_origin(handler))
+
+    def test_host_header_cannot_define_its_own_allowlist(self):
+        handler = object.__new__(server.Handler)
+        handler.headers = {"Origin": "https://attacker.example", "Host": "attacker.example"}
+        with patch.dict(os.environ, {"APP_ENV": "development", "ROOMROUTE_PORT": "8765"}):
+            self.assertFalse(server.Handler.trusted_host(handler))
+            self.assertFalse(server.Handler.check_origin(handler))
+        with patch.dict(os.environ, {"APP_ENV": "production", "ROOMROUTE_ALLOWED_HOSTS": "roomroute.example"}):
+            handler.headers = {"Origin": "https://roomroute.example", "Host": "roomroute.example"}
+            self.assertTrue(server.Handler.trusted_host(handler))
+            self.assertTrue(server.Handler.check_origin(handler))
 
     def test_write_rate_limit_is_enforced_per_action_and_ip(self):
         db = sqlite3.connect(":memory:")

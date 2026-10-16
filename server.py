@@ -1,9 +1,10 @@
-"""Local RoomRoute preview server. Uses only Python's standard library and SQLite."""
+"""Loopback-only RoomRoute product preview server."""
 from __future__ import annotations
 
 import json
 import argparse
 import os
+import re
 import secrets
 import sqlite3
 import traceback
@@ -11,7 +12,7 @@ from contextlib import contextmanager
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -21,20 +22,22 @@ DB = Path(os.environ.get("ROOMROUTE_DB_PATH", str(ROOT / "roomroute.sqlite3"))).
 AREAS = ["Dharampeth", "Bajaj Nagar", "Laxmi Nagar", "Pratap Nagar", "Manish Nagar", "Trimurti Nagar", "Ramdaspeth", "Civil Lines", "Sadar", "Wardha Road"]
 NAMES = ["Aarav Deshmukh", "Meera Kulkarni", "Rohan Patil", "Ananya Joshi", "Siddharth Shah", "Isha Nair", "Kabir Rao", "Neha Gokhale", "Aditya Sinha", "Tanvi Bapat", "Vihaan More", "Sana Khan", "Arjun Reddy", "Mira Chavan", "Dev Malhotra", "Riya Korde", "Ishaan Kulkarni", "Nisha Jadhav", "Omkar Desai", "Tara Menon", "Kunal Bhosale", "Aditi Puri", "Reyansh Pawar", "Zoya Merchant", "Atharv Kale", "Diya Shah", "Neil Wankhede", "Pooja Thakur", "Yash Mehta", "Saanvi Gupte", "Parth Agrawal", "Kavya Pillai", "Rudra Dube", "Simran Kaur", "Manav Borkar", "Anvi Rane", "Dhruv Jain", "Leena Naidu", "Ayaan Sheikh", "Sia Vaidya", "Harsh Tiwari", "Mahi Sable", "Nikhil Kamat", "Ira Roy", "Pranav Bhandari", "Esha Soni", "Samar Gawande", "Rhea Dutta", "Aarush Naik", "Tiya Mishra"]
 SEEDS = [
-    ("Sunlit room in a calm shared home", "Private room", 10500, 21000, "Fully furnished", 1, 1, 4.8, "photo-1522708323590-d24dbb6b0267"),
-    ("A bright room, steps from campus", "Private room", 8500, 17000, "Semi furnished", 0, 0, 4.7, "photo-1505693416388-ac5ce068fe85"),
-    ("Easy living in a roomy 2 BHK", "2 BHK flat", 22000, 44000, "Fully furnished", 1, 1, 4.9, "photo-1600210492486-724fe5c67fb0"),
-    ("Shared space with a friendly vibe", "Shared room", 6000, 12000, "Fully furnished", 1, 0, 4.5, "photo-1600607687939-ce8a6c25118c"),
-    ("A little home near the green", "1 BHK flat", 15500, 30000, "Semi furnished", 1, 1, 4.6, "photo-1600566753086-00f18fb6b3ea"),
-    ("Quiet private room with a balcony", "Private room", 12000, 24000, "Fully furnished", 0, 1, 4.8, "photo-1600607687920-4e2a09cf159d"),
-    ("Your own corner in a shared flat", "Private room", 9000, 18000, "Semi furnished", 1, 0, 4.4, "photo-1600566753190-17f0baa2a6c3"),
-    ("Open, airy 2 BHK near the main road", "2 BHK flat", 25000, 50000, "Fully furnished", 1, 1, 4.7, "photo-1616486338812-3dadae4b4ace"),
-    ("Comfortable shared room, all set up", "Shared room", 5500, 11000, "Fully furnished", 0, 0, 4.3, "photo-1600585154340-be6161a56a0c"),
-    ("A neat 1 BHK for your next chapter", "1 BHK flat", 14500, 29000, "Unfurnished", 1, 1, 4.6, "photo-1600607687644-c7171b42498f"),
+    ("Sunlit room in a calm shared home", "Private room", 10500, 21000, "Fully furnished", 1, 1, "photo-1522708323590-d24dbb6b0267"),
+    ("A bright room, steps from campus", "Private room", 8500, 17000, "Semi furnished", 0, 0, "photo-1505693416388-ac5ce068fe85"),
+    ("Easy living in a roomy 2 BHK", "2 BHK flat", 22000, 44000, "Fully furnished", 1, 1, "photo-1600210492486-724fe5c67fb0"),
+    ("Shared space with a friendly vibe", "Shared room", 6000, 12000, "Fully furnished", 1, 0, "photo-1600607687939-ce8a6c25118c"),
+    ("A little home near the green", "1 BHK flat", 15500, 30000, "Semi furnished", 1, 1, "photo-1600566753086-00f18fb6b3ea"),
+    ("Quiet private room with a balcony", "Private room", 12000, 24000, "Fully furnished", 0, 1, "photo-1600607687920-4e2a09cf159d"),
+    ("Your own corner in a shared flat", "Private room", 9000, 18000, "Semi furnished", 1, 0, "photo-1600566753190-17f0baa2a6c3"),
+    ("Open, airy 2 BHK near the main road", "2 BHK flat", 25000, 50000, "Fully furnished", 1, 1, "photo-1616486338812-3dadae4b4ace"),
+    ("Comfortable shared room, all set up", "Shared room", 5500, 11000, "Fully furnished", 0, 0, "photo-1600585154340-be6161a56a0c"),
+    ("A neat 1 BHK for your next chapter", "1 BHK flat", 14500, 29000, "Unfurnished", 1, 1, "photo-1600607687644-c7171b42498f"),
 ]
 PASSWORD_HASHER = PasswordHasher()
 SESSION_COOKIE = "roomroute_session"
 SESSION_DAYS = 7
+MAX_REQUEST_BYTES = 20_000
+EMAIL_RE = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z]{2,63})+$")
 
 
 def connect():
@@ -69,8 +72,10 @@ def init_db():
         CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','student','employee')), password_hash TEXT NOT NULL, is_verified INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, csrf_token TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS auth_attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, ip_address TEXT NOT NULL, email TEXT NOT NULL, failed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS request_limits(id INTEGER PRIMARY KEY AUTOINCREMENT, action TEXT NOT NULL, ip_address TEXT NOT NULL, occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
         CREATE INDEX IF NOT EXISTS idx_auth_attempts_lookup ON auth_attempts(ip_address,email,failed_at);
+        CREATE INDEX IF NOT EXISTS idx_request_limits_lookup ON request_limits(action,ip_address,occurred_at);
         """)
         # Safe migrations for databases created by the earlier local preview.
         for table in ("owners", "users", "listings"):
@@ -82,26 +87,25 @@ def init_db():
 
 def seed_sample_data():
     with db_session() as db:
-        if db.execute("SELECT COUNT(*) FROM owners WHERE is_sample=1").fetchone()[0] > 0:
+        sample_rows = sum(db.execute(f"SELECT COUNT(*) FROM {table} WHERE is_sample=1").fetchone()[0] for table in ("owners", "users", "listings"))
+        if sample_rows:
             return False
-        if db.execute("SELECT COUNT(*) FROM owners WHERE is_sample=0").fetchone()[0] > 0:
-            raise RuntimeError("Sample data can only be loaded into an empty owner inventory; remove sample data first.")
-        db.execute("UPDATE owners SET is_sample=1")
-        db.execute("UPDATE users SET is_sample=1")
-        db.execute("UPDATE listings SET is_sample=1")
-        if db.execute("SELECT COUNT(*) FROM owners").fetchone()[0] == 0:
-            for i, name in enumerate(NAMES):
-                oid = f"OWN-{i+1:03}"
-                db.execute("INSERT INTO owners(id,name,email,is_sample) VALUES(?,?,?,1)", (oid, name, f"owner{i+1:03}@example.com"))
-                title, kind, rent, deposit, furnish, parking, power, rating, photo = SEEDS[i % len(SEEDS)]
-                n = i // len(SEEDS)
-                db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)", (f"RR-{i+1:03}", oid, title if n == 0 else f"{title} · {n+1}", kind, rent+n*500, deposit+n*1000, AREAS[i % len(AREAS)], furnish, parking, power, f"2026-11-{i%20+1:02}", f"https://images.unsplash.com/{photo}?auto=format&fit=crop&w=1000&q=80", "A comfortable Nagpur home with useful everyday details and clear costs to help you compare options.", json.dumps([["Wi-Fi", "Study desk", "Washing machine"], ["Balcony", "Water purifier", "Wi-Fi"], ["Kitchen", "Wardrobe", "Lift"], ["Wi-Fi", "Study area", "Power backup"], ["Parking", "Balcony", "Kitchen"]][i%5])))
-            first = ["Aarohi", "Vivaan", "Sana", "Arnav", "Ishita", "Rehan", "Myra", "Ayaan", "Kritika", "Kabir", "Anika", "Rohan", "Zara", "Advik", "Meher", "Ishan", "Nitya", "Shaurya", "Saira", "Neil"]
-            last = ["Kadam", "Pawar", "Sharma", "Khan", "Bose", "Rao", "Joshi", "Desai", "Seth", "Kulkarni"]
-            for i in range(200):
-                role = "student" if i < 140 else "employee"
-                occupation = (["Engineering student", "Medical student", "Design student", "Commerce student", "MBA student"] if role == "student" else ["Software engineer", "Analyst", "Teacher", "Research associate", "Healthcare professional"])[i % 5]
-                db.execute("INSERT INTO users(id,name,email,role,occupation,budget,is_sample) VALUES(?,?,?,?,?,?,1)", (f"USR-{i+1:03}", f"{first[i%20]} {last[i//20]}", f"user{i+1:03}@example.com", role, occupation, 7000+(i%9)*2000))
+        real_rows = sum(db.execute(f"SELECT COUNT(*) FROM {table} WHERE is_sample=0").fetchone()[0] for table in ("owners", "users", "listings"))
+        real_rows += db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+        if real_rows:
+            raise RuntimeError("Sample records can only be seeded into an empty database. Existing user data was left unchanged.")
+        for i, name in enumerate(NAMES):
+            oid = f"OWN-{i+1:03}"
+            db.execute("INSERT INTO owners(id,name,email,is_sample) VALUES(?,?,?,1)", (oid, name, f"owner{i+1:03}@example.com"))
+            title, kind, rent, deposit, furnish, parking, power, photo = SEEDS[i % len(SEEDS)]
+            n = i // len(SEEDS)
+            db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)", (f"RR-{i+1:03}", oid, title if n == 0 else f"{title} · {n+1}", kind, rent+n*500, deposit+n*1000, AREAS[i % len(AREAS)], furnish, parking, power, f"2026-11-{i%20+1:02}", f"https://images.unsplash.com/{photo}?auto=format&fit=crop&w=1000&q=80", "A comfortable Nagpur home with useful everyday details and clear costs to help you compare options.", json.dumps([["Wi-Fi", "Study desk", "Washing machine"], ["Balcony", "Water purifier", "Wi-Fi"], ["Kitchen", "Wardrobe", "Lift"], ["Wi-Fi", "Study area", "Power backup"], ["Parking", "Balcony", "Kitchen"]][i%5])))
+        first = ["Aarohi", "Vivaan", "Sana", "Arnav", "Ishita", "Rehan", "Myra", "Ayaan", "Kritika", "Kabir", "Anika", "Rohan", "Zara", "Advik", "Meher", "Ishan", "Nitya", "Shaurya", "Saira", "Neil"]
+        last = ["Kadam", "Pawar", "Sharma", "Khan", "Bose", "Rao", "Joshi", "Desai", "Seth", "Kulkarni"]
+        for i in range(200):
+            role = "student" if i < 140 else "employee"
+            occupation = (["Engineering student", "Medical student", "Design student", "Commerce student", "MBA student"] if role == "student" else ["Software engineer", "Analyst", "Teacher", "Research associate", "Healthcare professional"])[i % 5]
+            db.execute("INSERT INTO users(id,name,email,role,occupation,budget,is_sample) VALUES(?,?,?,?,?,?,1)", (f"USR-{i+1:03}", f"{first[i%20]} {last[i//20]}", f"user{i+1:03}@example.com", role, occupation, 7000+(i%9)*2000))
         return True
 
 
@@ -151,21 +155,49 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    @staticmethod
+    def cookie_name():
+        return "__Host-roomroute_session" if os.environ.get("APP_ENV", "development").lower() == "production" else SESSION_COOKIE
+
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' https://images.unsplash.com data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+        if os.environ.get("APP_ENV", "development").lower() == "production":
+            self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         super().end_headers()
 
     def body(self):
-        size = int(self.headers.get("Content-Length", 0))
-        if size > 20000:
+        if self.headers.get("Transfer-Encoding"):
+            raise ValueError("Chunked request bodies are not supported")
+        if not self.headers.get("Content-Type", "").lower().startswith("application/json"):
+            raise ValueError("Content-Type must be application/json")
+        raw_size = self.headers.get("Content-Length")
+        if raw_size is None or not raw_size.isdecimal():
+            raise ValueError("A valid Content-Length header is required")
+        size = int(raw_size)
+        if size > MAX_REQUEST_BYTES:
             raise ValueError("Request is too large")
-        return json.loads(self.rfile.read(size) or b"{}")
+        payload = json.loads(self.rfile.read(size))
+        if not isinstance(payload, dict):
+            raise ValueError("A JSON object is required")
+        return payload
+
+    def allow_write(self, db, action, limit, window_seconds):
+        """Basic per-IP throttle for this single-process local preview only."""
+        ip = self.client_address[0]
+        since = (datetime.now(timezone.utc) - timedelta(seconds=window_seconds)).strftime("%Y-%m-%d %H:%M:%S")
+        count = db.execute("SELECT COUNT(*) FROM request_limits WHERE action=? AND ip_address=? AND occurred_at>=?", (action, ip, since)).fetchone()[0]
+        if count >= limit:
+            return False
+        db.execute("INSERT INTO request_limits(action,ip_address) VALUES(?,?)", (action, ip))
+        db.execute("DELETE FROM request_limits WHERE occurred_at < datetime('now','-1 day')")
+        return True
 
     def session(self, db):
-        raw = next((part.strip().split("=",1)[1] for part in self.headers.get("Cookie", "").split(";") if part.strip().startswith(f"{SESSION_COOKIE}=")), None)
+        cookie_name = self.cookie_name()
+        raw = next((part.strip().split("=",1)[1] for part in self.headers.get("Cookie", "").split(";") if part.strip().startswith(f"{cookie_name}=")), None)
         if not raw:
             return None
         token_hash = __import__("hashlib").sha256(raw.encode()).hexdigest()
@@ -196,21 +228,33 @@ class Handler(SimpleHTTPRequestHandler):
         token_hash = __import__("hashlib").sha256(raw_token.encode()).hexdigest()
         expires = datetime.now(timezone.utc) + timedelta(days=SESSION_DAYS)
         db.execute("INSERT INTO sessions(token_hash,account_id,csrf_token,expires_at) VALUES(?,?,?,?)", (token_hash, account_id, csrf_token, expires.isoformat()))
-        secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
-        self.response_cookie = f"{SESSION_COOKIE}={raw_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_DAYS*86400}{secure}"
+        # Never derive cookie security from a client-controlled forwarded header.
+        production = os.environ.get("APP_ENV", "development").lower() == "production"
+        cookie_name = self.cookie_name()
+        secure = "; Secure" if production else ""
+        self.response_cookie = f"{cookie_name}={raw_token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_DAYS*86400}{secure}"
         return csrf_token
 
     def check_origin(self):
         origin = self.headers.get("Origin")
         host = self.headers.get("Host")
-        return bool(origin and host and urlparse(origin).netloc.lower() == host.lower())
+        parsed = urlparse(origin or "")
+        production = os.environ.get("APP_ENV", "development").lower() == "production"
+        return bool(parsed.scheme in ({"https"} if production else {"http", "https"}) and parsed.netloc and host and parsed.netloc.lower() == host.lower())
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/healthz":
+            try:
+                with db_session() as db:
+                    db.execute("SELECT 1")
+                return self.send_json({"status": "ok"})
+            except Exception:
+                return self.send_json({"status": "unavailable"}, 503)
         with db_session() as db:
             if path == "/api/listings":
                 result = rows(db, "SELECT * FROM listings WHERE status='active' ORDER BY created_at DESC, id")
-                owners = rows(db, "SELECT id,name,is_sample FROM owners")
+                owners = rows(db, "SELECT DISTINCT o.id,o.name,o.is_sample FROM owners o JOIN listings l ON l.owner_id=o.id WHERE l.status='active'")
                 for owner in owners:
                     owner["isSample"] = bool(owner.pop("is_sample", 0))
                 self.send_json({"listings": [listing_json(r) for r in result], "owners": owners})
@@ -243,11 +287,13 @@ class Handler(SimpleHTTPRequestHandler):
                     if not self.check_origin():
                         return self.send_json({"error": "Request origin could not be verified."}, 403)
                     if self.path == "/api/auth/register":
+                        if not self.allow_write(db, "register", 5, 3600):
+                            return self.send_json({"error": "Too many account creation attempts. Try again later."}, 429)
                         name = str(payload.get("name", "")).strip()
                         email = str(payload.get("email", "")).strip().lower()
                         password = str(payload.get("password", ""))
                         role = str(payload.get("role", ""))
-                        if not 2 <= len(name) <= 80 or email.count("@") != 1 or len(email) > 254 or any(char.isspace() for char in email) or role not in {"owner", "student", "employee"} or len(password) < 12 or len(password) > 256:
+                        if not 2 <= len(name) <= 80 or len(email) > 254 or not EMAIL_RE.fullmatch(email) or ".." in email.split("@")[0] or email.split("@")[0].startswith(".") or email.split("@")[0].endswith(".") or role not in {"owner", "student", "employee"} or len(password) < 12 or len(password) > 256:
                             return self.send_json({"error": "Use a name, valid email, account type, and password between 12 and 256 characters."}, 400)
                         if db.execute("SELECT 1 FROM accounts WHERE email=? UNION SELECT 1 FROM owners WHERE lower(email)=? UNION SELECT 1 FROM users WHERE lower(email)=?", (email,email,email)).fetchone():
                             return self.send_json({"error": "An account with this email already exists."}, 409)
@@ -290,7 +336,8 @@ class Handler(SimpleHTTPRequestHandler):
                         return
                     db.execute("DELETE FROM sessions WHERE token_hash=?",(current["token_hash"],))
                     self.send_response(204)
-                    self.send_header("Set-Cookie", f"{SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0")
+                    secure = "; Secure" if os.environ.get("APP_ENV", "development").lower() == "production" else ""
+                    self.send_header("Set-Cookie", f"{self.cookie_name()}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{secure}")
                     self.end_headers()
                     return
                 if self.path == "/api/inquiries":
@@ -301,13 +348,18 @@ class Handler(SimpleHTTPRequestHandler):
                         return
                     if current["role"] not in {"student", "employee"}:
                         return self.send_json({"error":"Only renter accounts can send inquiries."},403)
+                    if not self.allow_write(db, "inquiry", 10, 3600):
+                        return self.send_json({"error": "Too many inquiries. Try again later."}, 429)
                     listing_id = str(payload.get("listingId", ""))
                     message = str(payload.get("message", "")).strip()
                     student_id = current["id"]
                     if len(message) < 8 or len(message) > 2000:
                         return self.send_json({"error": "Message must be between 8 and 2,000 characters."}, 400)
-                    if not db.execute("SELECT 1 FROM listings WHERE id=? AND status='active'", (listing_id,)).fetchone():
+                    listing = db.execute("SELECT is_sample FROM listings WHERE id=? AND status='active'", (listing_id,)).fetchone()
+                    if not listing:
                         return self.send_json({"error": "This listing is no longer available."}, 404)
+                    if listing["is_sample"]:
+                        return self.send_json({"error": "Sample listings are fictional and cannot receive inquiries."}, 400)
                     cursor = db.execute("INSERT INTO inquiries(listing_id,student_id,message) VALUES(?,?,?)", (listing_id, student_id, message))
                     return self.send_json({"id": cursor.lastrowid, "message": "Inquiry saved to the local preview inbox."}, 201)
                 if self.path == "/api/listings":
@@ -316,20 +368,36 @@ class Handler(SimpleHTTPRequestHandler):
                     current = self.require_session(db, role="owner", csrf=True)
                     if not current:
                         return
+                    if not self.allow_write(db, "listing", 10, 3600):
+                        return self.send_json({"error": "Too many listing changes. Try again later."}, 429)
                     title = str(payload.get("title", "")).strip()
                     kind = str(payload.get("type", ""))
                     area = str(payload.get("area", ""))
-                    rent, deposit = int(payload.get("rent", 0)), int(payload.get("deposit", 0))
-                    if not title or len(title) > 100 or kind not in {"Private room", "Shared room", "1 BHK flat", "2 BHK flat"} or area not in AREAS or rent < 1 or rent > 1000000 or deposit < 0 or deposit > 10000000:
+                    rent_value, deposit_value = payload.get("rent"), payload.get("deposit")
+                    if type(rent_value) is not int or type(deposit_value) is not int:
+                        return self.send_json({"error": "Rent and deposit must be whole numbers."}, 400)
+                    rent, deposit = rent_value, deposit_value
+                    furnishing = str(payload.get("furnishing", "Semi furnished"))
+                    available_from = str(payload.get("availableFrom", ""))
+                    summary = str(payload.get("summary", "")).strip()
+                    try:
+                        date.fromisoformat(available_from)
+                        valid_date = len(available_from) == 10
+                    except ValueError:
+                        valid_date = False
+                    if not title or len(title) > 100 or kind not in {"Private room", "Shared room", "1 BHK flat", "2 BHK flat"} or area not in AREAS or furnishing not in {"Fully furnished", "Semi furnished", "Unfurnished"} or rent < 1 or rent > 1000000 or deposit < 0 or deposit > 10000000 or not valid_date or len(summary) > 500 or type(payload.get("parking")) is not bool or type(payload.get("electricityIncluded")) is not bool:
                         return self.send_json({"error": "Enter a title, valid property type, Nagpur area, and realistic rent and deposit."}, 400)
                     new_id = f"RR-{secrets.token_hex(12)}"
-                    db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)", (new_id, current["id"], title, kind, rent, deposit, area, str(payload.get("furnishing", "Semi furnished")), int(payload.get("parking") is True), int(payload.get("electricityIncluded") is True), str(payload.get("availableFrom", "2026-11-01")), "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=80", str(payload.get("summary", ""))[:500], json.dumps([])))
+                    db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)", (new_id, current["id"], title, kind, rent, deposit, area, furnishing, int(payload["parking"]), int(payload["electricityIncluded"]), available_from, "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=80", summary, json.dumps([])))
                     return self.send_json({"id": new_id, "message": "Listing added to the local preview."}, 201)
             self.send_json({"error": "Not found"}, 404)
+        except sqlite3.IntegrityError:
+            self.send_json({"error": "This record conflicts with existing data."}, 409)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self.send_json({"error": f"Invalid request: {exc}"}, 400)
         except Exception:
-            traceback.print_exc()
+            if os.environ.get("APP_ENV", "development").lower() != "production":
+                traceback.print_exc()
             self.send_json({"error": "The request could not be completed."}, 500)
 
     def log_message(self, fmt, *args):

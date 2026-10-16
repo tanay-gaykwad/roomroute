@@ -2,7 +2,7 @@
 
 ## Supported deployment
 
-There is no supported public deployment yet. This repository is a local product preview and intentionally refuses production mode and non-loopback network binding. Do not store real personal information in it.
+The repository includes a local preview and a production-configured mode. Production mode requires PostgreSQL, Redis, SMTP/STARTTLS, HTTPS URL and an explicit host allowlist. A configuration gate does not certify a deployment; see [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md). Do not store real personal information in the SQLite local preview or local Compose defaults.
 
 ## Reporting a vulnerability
 

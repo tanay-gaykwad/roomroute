@@ -106,6 +106,10 @@ def connect():
 
 
 def _hybrid_factory(cursor):
+    # DDL and other command statements have no row description. Psycopg
+    # requests a row maker for them anyway, so return a no-op maker.
+    if cursor.description is None:
+        return lambda values: None
     names = [column.name for column in cursor.description]
     return lambda values: HybridRow(zip(names, values))
 

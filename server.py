@@ -879,7 +879,7 @@ if __name__ == "__main__":
     if production:
         validate_production_config()
     host = os.environ.get("ROOMROUTE_HOST", "0.0.0.0" if production else "127.0.0.1")
-    port = int(os.environ.get("ROOMROUTE_PORT", "8765"))
+    port = int(os.environ.get("ROOMROUTE_PORT", os.environ.get("PORT", "8765")))
     if not production and host not in {"127.0.0.1", "localhost", "::1"} and os.environ.get("ROOMROUTE_CONTAINER") != "1":
         raise SystemExit("This preview server is local-only and refuses non-loopback bind addresses.")
     if os.environ.get("ROOMROUTE_SEED_DATA", "0") == "1":

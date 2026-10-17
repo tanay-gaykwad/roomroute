@@ -10,6 +10,18 @@
 
 The app waits for healthy PostgreSQL and Redis services. Data persists in named Docker volumes. To reset local demo data, use the specific sample removal command; deleting volumes destroys all local accounts and app data.
 
+## Render Blueprint
+
+The repository includes `render.yaml` for a Singapore-region Render web service, managed PostgreSQL, and Redis-compatible Key Value. It uses paid service plans; review current Render pricing before creating resources. The Blueprint stores no email credentials or public hostname in Git.
+
+1. In Render, create a Blueprint from the `tanay-gaykwad/roomroute` GitHub repository and review the resources and estimated charges before applying it.
+2. After Render creates the web service, open its Environment settings and set `ROOMROUTE_PUBLIC_URL` to its HTTPS `onrender.com` URL and `ROOMROUTE_ALLOWED_HOSTS` to the matching hostname without `https://`.
+3. Set `SMTP_HOST` and `SMTP_FROM` to a verified sender from your transactional email provider. If the provider requires login, add `SMTP_USERNAME` and `SMTP_PASSWORD` there as secret environment variables. `SMTP_STARTTLS=1` and port `587` are configured by the Blueprint.
+4. Save the environment and wait for the service health check at `/healthz` to pass. Production startup deliberately refuses traffic until the URL, host allowlist, and SMTP sender are configured.
+5. Configure database backups, restore checks, alerting, and an operator-owned recovery process before accepting real users. Create the first moderator using the documented secure, interactive setup process; never put moderator credentials in Blueprint variables.
+
+The web service reads Render's `PORT` variable when `ROOMROUTE_PORT` is not explicitly set. Database and Key Value connection strings are injected by service references and are not stored in the repository.
+
 ## Public container deployment
 
 Use the image built from this directory on a provider that supports Python containers. Provision managed PostgreSQL and Redis; configure TLS at the provider's load balancer or reverse proxy; configure SMTP with a verified sending domain; and store every password/URL as a managed secret. Required settings:

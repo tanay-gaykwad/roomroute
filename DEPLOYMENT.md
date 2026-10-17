@@ -12,9 +12,9 @@ The app waits for healthy PostgreSQL and Redis services. Data persists in named 
 
 ## Render Blueprint
 
-The repository includes `render.yaml` for a Singapore-region Render web service, managed PostgreSQL, and Redis-compatible Key Value. It uses paid service plans; review current Render pricing before creating resources. The Blueprint stores no email credentials or public hostname in Git.
+The repository includes `render.yaml` for a Singapore-region Render web service, managed PostgreSQL, and Redis-compatible Key Value. It uses Render's free plans to avoid provisioning paid resources. Render documents these plans for previews and hobby projects, not production: the web service spins down after 15 minutes idle, and the free Postgres database expires after 30 days. Do not store real user data in this setup. See [Render's free instance limitations](https://render.com/docs/free). The Blueprint stores no email credentials or public hostname in Git.
 
-1. In Render, create a Blueprint from the `tanay-gaykwad/roomroute` GitHub repository and review the resources and estimated charges before applying it.
+1. In Render, create a Blueprint from the `tanay-gaykwad/roomroute` GitHub repository. The resources are set to Free; verify the plan in the dashboard before applying it.
 2. After Render creates the web service, open its Environment settings and set `ROOMROUTE_PUBLIC_URL` to its HTTPS `onrender.com` URL and `ROOMROUTE_ALLOWED_HOSTS` to the matching hostname without `https://`.
 3. Set `SMTP_HOST` and `SMTP_FROM` to a verified sender from your transactional email provider. If the provider requires login, add `SMTP_USERNAME` and `SMTP_PASSWORD` there as secret environment variables. `SMTP_STARTTLS=1` and port `587` are configured by the Blueprint.
 4. Save the environment and wait for the service health check at `/healthz` to pass. Production startup deliberately refuses traffic until the URL, host allowlist, and SMTP sender are configured.

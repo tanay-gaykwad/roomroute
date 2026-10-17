@@ -2,7 +2,7 @@ services:
   - type: web
     name: roomroute
     runtime: docker
-    plan: starter
+    plan: free
     region: singapore
     dockerfilePath: ./Dockerfile
     dockerContext: .
@@ -37,7 +37,7 @@ services:
 
   - type: keyvalue
     name: roomroute-limits
-    plan: starter
+    plan: free
     region: singapore
     maxmemoryPolicy: noeviction
     ipAllowList: []
@@ -46,6 +46,6 @@ databases:
   - name: roomroute-db
     databaseName: roomroute
     user: roomroute
-    plan: basic-256mb
+    plan: free
     region: singapore
     postgresMajorVersion: "16"

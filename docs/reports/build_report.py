@@ -10,8 +10,10 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
-    BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, PageBreak,
+    BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, PageBreak, NextPageTemplate,
     Table, TableStyle, Preformatted, Flowable, KeepTogether,
 )
 
@@ -25,15 +27,23 @@ GOLD = colors.HexColor("#c99d4b")
 MUTED = colors.HexColor("#657168")
 SAMPLE = colors.HexColor("#fff2cf")
 
+# Arial is embedded to keep the rupee sign and other report glyphs legible.
+pdfmetrics.registerFont(TTFont("Arial", r"C:\Windows\Fonts\arial.ttf"))
+pdfmetrics.registerFont(TTFont("Arial-Bold", r"C:\Windows\Fonts\arialbd.ttf"))
+pdfmetrics.registerFont(TTFont("Arial-Italic", r"C:\Windows\Fonts\ariali.ttf"))
+
 styles = getSampleStyleSheet()
 styles.add(ParagraphStyle(name="RRTitle", parent=styles["Title"], fontName="Helvetica-Bold", fontSize=22, leading=27, textColor=INK, alignment=TA_CENTER, spaceAfter=12))
-styles.add(ParagraphStyle(name="RRH1", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=15, leading=19, textColor=GREEN, spaceBefore=3, spaceAfter=9))
-styles.add(ParagraphStyle(name="RRH2", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=10, leading=13, textColor=INK, spaceBefore=7, spaceAfter=4))
-styles.add(ParagraphStyle(name="RRBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=9, leading=12.2, textColor=INK, spaceAfter=6))
-styles.add(ParagraphStyle(name="RRSmall", parent=styles["BodyText"], fontName="Helvetica", fontSize=7.7, leading=10, textColor=INK, spaceAfter=3))
+styles.add(ParagraphStyle(name="RRH1", parent=styles["Heading1"], fontName="Arial-Bold", fontSize=16, leading=20, textColor=GREEN, spaceBefore=3, spaceAfter=10, keepWithNext=True))
+styles.add(ParagraphStyle(name="RRH2", parent=styles["Heading2"], fontName="Arial-Bold", fontSize=11, leading=14, textColor=INK, spaceBefore=9, spaceAfter=6, keepWithNext=True))
+styles.add(ParagraphStyle(name="RRBody", parent=styles["BodyText"], fontName="Arial", fontSize=9.5, leading=13.2, textColor=INK, spaceAfter=7))
+styles.add(ParagraphStyle(name="RRSmall", parent=styles["BodyText"], fontName="Arial", fontSize=8.5, leading=11.4, textColor=INK, spaceAfter=4))
 styles.add(ParagraphStyle(name="RRNote", parent=styles["BodyText"], fontName="Helvetica-Bold", fontSize=8, leading=10.5, textColor=colors.HexColor("#684a13"), backColor=SAMPLE, borderPadding=7, spaceBefore=4, spaceAfter=7))
-styles.add(ParagraphStyle(name="RRCode", fontName="Courier", fontSize=6.8, leading=8.1, textColor=INK, leftIndent=5, rightIndent=5, borderColor=colors.HexColor("#dfe6df"), borderWidth=.5, borderPadding=6, backColor=colors.HexColor("#f7f9f7"), spaceBefore=3, spaceAfter=6))
+styles.add(ParagraphStyle(name="RRNoteInner", parent=styles["BodyText"], fontName="Arial-Bold", fontSize=8.5, leading=11.4, textColor=colors.HexColor("#684a13"), backColor=SAMPLE, borderPadding=8, spaceBefore=5, spaceAfter=8))
+styles.add(ParagraphStyle(name="RRCode", fontName="Courier", fontSize=7.6, leading=9.4, textColor=INK, leftIndent=6, rightIndent=6, borderColor=colors.HexColor("#dfe6df"), borderWidth=.6, borderPadding=8, backColor=colors.HexColor("#f7f9f7"), spaceBefore=4, spaceAfter=8))
 styles.add(ParagraphStyle(name="RRCenter", parent=styles["BodyText"], fontName="Helvetica", fontSize=10, leading=14, textColor=INK, alignment=TA_CENTER, spaceAfter=8))
+styles.add(ParagraphStyle(name="RRCell", parent=styles["BodyText"], fontName="Arial", fontSize=8.3, leading=11.2, textColor=INK))
+styles.add(ParagraphStyle(name="RRCellHead", parent=styles["BodyText"], fontName="Arial-Bold", fontSize=8.3, leading=11.2, textColor=GREEN))
 
 
 def para(text, style="RRBody"):
@@ -45,13 +55,13 @@ def code(text):
 
 
 def grid(rows, widths=None, header=True, font=7.4):
-    cooked = [[para(str(v), "RRSmall") for v in row] for row in rows]
+    cooked = [[para(str(v), "RRCellHead" if header and rid == 0 else "RRCell") for v in row] for rid, row in enumerate(rows)]
     t = Table(cooked, colWidths=widths, repeatRows=1 if header else 0, hAlign="LEFT")
     cmds = [
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#cbd5cc")),
         ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]
     if header:
         cmds += [("BACKGROUND", (0, 0), (-1, 0), PALE), ("TEXTCOLOR", (0, 0), (-1, 0), GREEN)]
@@ -61,7 +71,7 @@ def grid(rows, widths=None, header=True, font=7.4):
 
 class InterfacePanel(Flowable):
     """A labeled vector interface illustration, not a browser screenshot."""
-    def __init__(self, variant, width=166*mm, height=205*mm):
+    def __init__(self, variant, width=180*mm, height=210*mm):
         super().__init__()
         self.variant, self.width, self.height = variant, width, height
 
@@ -77,31 +87,31 @@ class InterfacePanel(Flowable):
         c.setFillColor(colors.HexColor("#684a13")); c.setFont("Helvetica-Bold", 6.5)
         c.drawCentredString(w/2, h-28*mm, "LOCAL PREVIEW · FICTIONAL DATA · NOT A LIVE RENTAL SERVICE")
         if self.variant == 1:
-            c.setFillColor(INK); c.setFont("Helvetica-Bold", 20); c.drawString(10*mm, h-48*mm, "A place to land.")
-            c.setFillColor(GREEN); c.setFont("Helvetica-Oblique", 19); c.drawString(10*mm, h-57*mm, "A city to grow.")
-            c.setFillColor(MUTED); c.setFont("Helvetica", 8); c.drawString(10*mm, h-65*mm, "Find a room or flat that fits your life and budget.")
+            c.setFillColor(INK); c.setFont("Arial-Bold", 20); c.drawString(10*mm, h-48*mm, "A place to land.")
+            c.setFillColor(GREEN); c.setFont("Arial-Italic", 19); c.drawString(10*mm, h-57*mm, "A city to grow.")
+            c.setFillColor(MUTED); c.setFont("Arial", 8); c.drawString(10*mm, h-65*mm, "Find a room or flat that fits your life and budget.")
             labels = [("AREA", "All Nagpur"), ("PLACE TYPE", "Rooms & flats"), ("MONTHLY BUDGET", "Any budget")]
             x = 10*mm
             for title, value in labels:
                 c.setFillColor(colors.white); c.roundRect(x, h-84*mm, 43*mm, 14*mm, 4, fill=1, stroke=0)
-                c.setFillColor(MUTED); c.setFont("Helvetica-Bold", 6); c.drawString(x+3*mm, h-75*mm, title)
-                c.setFillColor(INK); c.setFont("Helvetica", 8); c.drawString(x+3*mm, h-81*mm, value)
+                c.setFillColor(MUTED); c.setFont("Arial-Bold", 6); c.drawString(x+3*mm, h-75*mm, title)
+                c.setFillColor(INK); c.setFont("Arial", 8); c.drawString(x+3*mm, h-81*mm, value)
                 x += 46*mm
             c.setFillColor(GREEN); c.roundRect(x, h-84*mm, 28*mm, 14*mm, 4, fill=1, stroke=0)
-            c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 7); c.drawCentredString(x+14*mm, h-78*mm, "Find a place")
-            c.setFillColor(INK); c.setFont("Helvetica-Bold", 12); c.drawString(10*mm, h-101*mm, "Places to call home")
+            c.setFillColor(colors.white); c.setFont("Arial-Bold", 7); c.drawCentredString(x+14*mm, h-78*mm, "Find a place")
+            c.setFillColor(INK); c.setFont("Arial-Bold", 12); c.drawString(10*mm, h-101*mm, "Places to call home")
             self._cards(c, w, h-108*mm, 3)
         elif self.variant == 2:
-            c.setFillColor(INK); c.setFont("Helvetica-Bold", 15); c.drawString(10*mm, h-48*mm, "Filter the details that matter")
+            c.setFillColor(INK); c.setFont("Arial-Bold", 15); c.drawString(10*mm, h-48*mm, "Filter the details that matter")
             self._cards(c, w, h-60*mm, 2)
             c.setFillColor(colors.white); c.roundRect(10*mm, 13*mm, w-20*mm, 51*mm, 6, fill=1, stroke=0)
-            c.setFillColor(GREEN); c.setFont("Helvetica-Bold", 11); c.drawString(16*mm, 54*mm, "Bright room near VNIT")
-            c.setFillColor(MUTED); c.setFont("Helvetica", 8); c.drawString(16*mm, 46*mm, "Dharampeth, Nagpur  ·  Private room")
-            c.setFillColor(INK); c.setFont("Helvetica-Bold", 10); c.drawString(16*mm, 35*mm, "₹8,500 / month   ·   Deposit ₹17,000")
+            c.setFillColor(GREEN); c.setFont("Arial-Bold", 11); c.drawString(16*mm, 54*mm, "Bright room near VNIT")
+            c.setFillColor(MUTED); c.setFont("Arial", 8); c.drawString(16*mm, 46*mm, "Dharampeth, Nagpur  ·  Private room")
+            c.setFillColor(INK); c.setFont("Arial-Bold", 10); c.drawString(16*mm, 35*mm, "₹8,500 / month   ·   Deposit ₹17,000")
             for i, s in enumerate(["Electricity billed separately", "Parking available", "Owner photos not provided"]):
-                c.setFillColor(MUTED); c.setFont("Helvetica", 7); c.drawString(16*mm, 27*mm-i*5*mm, "•  "+s)
+                c.setFillColor(MUTED); c.setFont("Arial", 7); c.drawString(16*mm, 27*mm-i*5*mm, "•  "+s)
         else:
-            c.setFillColor(INK); c.setFont("Helvetica-Bold", 15); c.drawString(10*mm, h-48*mm, "Owner workspace and listing review")
+            c.setFillColor(INK); c.setFont("Arial-Bold", 15); c.drawString(10*mm, h-48*mm, "Owner workspace and listing review")
             for i, (title, sub, status) in enumerate([
                 ("Your submitted place", "Rent, deposit, area, utilities", "PENDING REVIEW"),
                 ("Listing availability", "Pause an active listing", "OWNER ACTION"),
@@ -109,13 +119,13 @@ class InterfacePanel(Flowable):
             ]):
                 y = h-(65+i*38)*mm
                 c.setFillColor(colors.white); c.roundRect(10*mm, y, w-20*mm, 29*mm, 5, fill=1, stroke=0)
-                c.setFillColor(INK); c.setFont("Helvetica-Bold", 10); c.drawString(16*mm, y+19*mm, title)
-                c.setFillColor(MUTED); c.setFont("Helvetica", 7.5); c.drawString(16*mm, y+10*mm, sub)
-                c.setFillColor(GREEN); c.setFont("Helvetica-Bold", 7); c.drawRightString(w-15*mm, y+19*mm, status)
+                c.setFillColor(INK); c.setFont("Arial-Bold", 10); c.drawString(16*mm, y+19*mm, title)
+                c.setFillColor(MUTED); c.setFont("Arial", 7.5); c.drawString(16*mm, y+10*mm, sub)
+                c.setFillColor(GREEN); c.setFont("Arial-Bold", 7); c.drawRightString(w-15*mm, y+19*mm, status)
             c.setFillColor(SAMPLE); c.roundRect(10*mm, 18*mm, w-20*mm, 17*mm, 4, fill=1, stroke=0)
-            c.setFillColor(colors.HexColor("#684a13")); c.setFont("Helvetica-Bold", 7)
+            c.setFillColor(colors.HexColor("#684a13")); c.setFont("Arial-Bold", 7)
             c.drawString(15*mm, 28*mm, "Registration, verification and inquiry flows require a configured email provider.")
-        c.setFillColor(MUTED); c.setFont("Helvetica-Oblique", 7)
+        c.setFillColor(MUTED); c.setFont("Arial-Italic", 7)
         c.drawCentredString(w/2, 5*mm, "Illustrative screen layout based on the current frontend source; not a production capture.")
 
     def _cards(self, c, w, top, count):
@@ -124,12 +134,12 @@ class InterfacePanel(Flowable):
             x = left+i*(cardw+gap); y = top-75*mm
             c.setFillColor(colors.white); c.roundRect(x, y, cardw, 73*mm, 5, fill=1, stroke=0)
             c.setFillColor(colors.HexColor("#e8eee8")); c.roundRect(x+3*mm, y+42*mm, cardw-6*mm, 27*mm, 4, fill=1, stroke=0)
-            c.setFillColor(MUTED); c.setFont("Helvetica", 7); c.drawCentredString(x+cardw/2, y+54*mm, "Owner photos not provided")
-            c.setFillColor(GREEN); c.setFont("Helvetica-Bold", 8)
+            c.setFillColor(MUTED); c.setFont("Arial", 7); c.drawCentredString(x+cardw/2, y+54*mm, "Owner photos not provided")
+            c.setFillColor(GREEN); c.setFont("Arial-Bold", 8)
             c.drawString(x+3*mm, y+36*mm, ["Bright room near VNIT", "Quiet 1 BHK flat", "Shared student room"][i%3])
-            c.setFillColor(MUTED); c.setFont("Helvetica", 6.6); c.drawString(x+3*mm, y+29*mm, ["Dharampeth", "Laxmi Nagar", "Pratap Nagar"][i%3]+", Nagpur")
-            c.setFillColor(INK); c.setFont("Helvetica-Bold", 9); c.drawString(x+3*mm, y+19*mm, ["₹8,500", "₹13,000", "₹5,500"][i%3]+" / mo")
-            c.setFillColor(MUTED); c.setFont("Helvetica", 6.5); c.drawString(x+3*mm, y+10*mm, "Sample · electricity details shown")
+            c.setFillColor(MUTED); c.setFont("Arial", 6.6); c.drawString(x+3*mm, y+29*mm, ["Dharampeth", "Laxmi Nagar", "Pratap Nagar"][i%3]+", Nagpur")
+            c.setFillColor(INK); c.setFont("Arial-Bold", 9); c.drawString(x+3*mm, y+19*mm, ["₹8,500", "₹13,000", "₹5,500"][i%3]+" / mo")
+            c.setFillColor(MUTED); c.setFont("Arial", 6.5); c.drawString(x+3*mm, y+10*mm, "Sample · electricity details shown")
 
 
 def draw_page(canvas, doc):
@@ -144,22 +154,26 @@ def draw_page(canvas, doc):
 
 
 doc = BaseDocTemplate(str(OUT), pagesize=A4, leftMargin=21*mm, rightMargin=21*mm, topMargin=24*mm, bottomMargin=20*mm, title="RoomRoute DBMS Mini Project Report", author="Tanay Gaykwad")
-frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="main", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
-doc.addPageTemplates([PageTemplate(id="report", frames=[frame], onPage=draw_page)])
+cover_frame = Frame(21*mm, 20*mm, W-42*mm, H-44*mm, id="cover", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+content_frame = Frame(15*mm, 18*mm, W-30*mm, H-41*mm, id="content", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+doc.addPageTemplates([
+    PageTemplate(id="cover", frames=[cover_frame], onPage=draw_page),
+    PageTemplate(id="content", frames=[content_frame], onPage=draw_page),
+])
 story = []
 
 # Page 1 — cover
-story += [Spacer(1, 35*mm), para("DATABASE MANAGEMENT SYSTEM", "RRTitle"), para("MINI PROJECT REPORT", "RRTitle"), Spacer(1, 7*mm), para("ROOMROUTE", "RRTitle"), para("Nagpur Rental Search and Listing Platform", "RRCenter"), Spacer(1, 13*mm), para("DBMS PROJECT · POSTGRESQL / SQLITE PREVIEW", "RRCenter"), Spacer(1, 18*mm), para("Prepared by: Tanay Gaykwad", "RRCenter"), para("College / department: ______________________________", "RRCenter"), para("Roll number: _____________________________________", "RRCenter"), Spacer(1, 12*mm), para("Repository link: https://github.com/tanay-gaykwad/roomroute", "RRCenter"), para("Live application: Not deployed", "RRCenter"), Spacer(1, 13*mm), para("This report documents the current code and local synthetic preview. It does not claim that fictional records are real rentals or that a public service is live.", "RRNote"), PageBreak()]
+story += [Spacer(1, 35*mm), para("DATABASE MANAGEMENT SYSTEM", "RRTitle"), para("MINI PROJECT REPORT", "RRTitle"), Spacer(1, 7*mm), para("ROOMROUTE", "RRTitle"), para("Nagpur Rental Search and Listing Platform", "RRCenter"), Spacer(1, 13*mm), para("DBMS PROJECT · POSTGRESQL / SQLITE PREVIEW", "RRCenter"), Spacer(1, 18*mm), para("Prepared by: Tanay Gaykwad", "RRCenter"), para("College / department: ______________________________", "RRCenter"), para("Roll number: _____________________________________", "RRCenter"), Spacer(1, 12*mm), para("Repository link: https://github.com/tanay-gaykwad/roomroute", "RRCenter"), para("Live application: Not deployed", "RRCenter"), Spacer(1, 13*mm), para("This report documents the current code and local synthetic preview. It does not claim that fictional records are real rentals or that a public service is live.", "RRNote"), NextPageTemplate("content"), PageBreak()]
 
 # Page 2 — index
-story += [para("INDEX", "RRH1"), grid([["Sr.", "Contents", "Page"], ["1", "Project Structure / 20-Step Sequence", "3"], ["2", "Aim, Objectives, Theory & Requirements", "4"], ["3", "Original PostgreSQL Code", "5–11"], ["4", "Basic SQL Query Outputs", "12"], ["5", "JOIN Outputs", "13"], ["6", "Aggregate Functions, GROUP BY & Subquery", "14"], ["7", "Indexes and database behavior", "15"], ["8", "CRUD — Create & Read", "16"], ["9", "CRUD — Update & Delete", "17"], ["10", "Frontend interface illustrations", "18–20"], ["11", "Result & Conclusion", "21"], ["12", "Advantages, Disadvantages & Future Scope", "21"]], [18*mm, 118*mm, 22*mm]), Spacer(1, 10*mm), para("Report layout follows the supplied college-format DBMS report. Database examples are adapted to the RoomRoute schema and features actually present in this repository.", "RRNote"), PageBreak()]
+story += [para("INDEX", "RRH1"), grid([["Sr.", "Contents", "Page"], ["1", "Project Structure / 20-Step Sequence", "3"], ["2", "Aim, Objectives, Theory & Requirements", "4"], ["3", "Original PostgreSQL Code", "5–11"], ["4", "Basic SQL Query Outputs", "12"], ["5", "JOIN Outputs", "13"], ["6", "Aggregate Functions, GROUP BY & Subquery", "14"], ["7", "Indexes and database behavior", "15"], ["8", "CRUD — Create & Read", "16"], ["9", "CRUD — Update & Delete", "17"], ["10", "Frontend interface illustrations", "18–20"], ["11", "Result & Conclusion", "21"], ["12", "Advantages, Disadvantages & Future Scope", "21"]], [20*mm, 136*mm, 24*mm]), Spacer(1, 8*mm), para("PROJECT AT A GLANCE", "RRH2"), grid([["Item", "Project detail"], ["Service area", "Nagpur, Maharashtra"], ["Core records", "Owners, renter profiles, accounts, listings, inquiries and moderation reports"], ["Database modes", "PostgreSQL for configured service mode; SQLite for local preview"], ["Preview inventory", "50 synthetic owners, 200 renter profiles and 50 synthetic room/flat listings"]], [43*mm, 137*mm]), Spacer(1, 4*mm), para("Reading note: the report preserves the supplied college report's section order. SQL and outputs are adapted to RoomRoute; no View, Trigger, live website, real user account or actual rental is claimed.", "RRNoteInner"), PageBreak()]
 
 # Page 3
 steps = [["Step", "Module"], ["1", "Create owner and renter profile tables"], ["2", "Create account and role table"], ["3", "Create verified-session table"], ["4", "Create one-time authentication-token table"], ["5", "Create rental listing table"], ["6", "Create inquiry table"], ["7", "Create moderation report table"], ["8", "Create durable email outbox table"], ["9", "Create authentication-attempt records"], ["10", "Create indexes and schema migration version"], ["11", "Load synthetic preview owners and renters"], ["12", "Load synthetic preview room and flat listings"], ["13", "Run basic filter and sort queries"], ["14", "Join listings to owners"], ["15", "Aggregate listing and inquiry counts"], ["16", "Group by area and property type"], ["17", "Use bounded listing pagination"], ["18", "Create an owner listing (CRUD)"], ["19", "Approve, pause, report and export records"], ["20", "Review frontend and local service flows"]]
-story += [para("PROJECT STRUCTURE / 20-STEP SEQUENCE", "RRH1"), grid(steps, [17*mm, 141*mm]), PageBreak()]
+story += [para("PROJECT STRUCTURE / 20-STEP SEQUENCE", "RRH1"), grid(steps, [20*mm, 160*mm]), Spacer(1, 6*mm), para("WORK PHASES", "RRH2"), grid([["Phase", "Steps", "Outcome"], ["Schema and safety foundations", "1–10", "Relational tables, constraints, indexes and migrations"], ["Database analysis", "11–17", "Synthetic fixtures, filtered search, joins and aggregate queries"], ["Application workflows", "18–20", "Owner listing lifecycle, renter discovery and moderation review"]], [45*mm, 23*mm, 112*mm]), PageBreak()]
 
 # Page 4
-story += [para("1. AIM", "RRH1"), para("To design and implement RoomRoute, a Nagpur-focused rental search platform that models owners, renters, accounts, room and flat listings, inquiries, and moderation using relational database operations.", "RRBody"), para("2. OBJECTIVES", "RRH2"), para("• Store owner, renter, account, listing, inquiry and moderation data with relational keys. • Search rooms and flats using location, budget, utilities, furnishing and parking. • Apply authentication, verification, inquiry, listing review and privacy workflows. • Demonstrate filtering, joins, aggregation, indexes and CRUD with synthetic preview data.", "RRBody"), para("3. THEORY", "RRH2"), para("A relational database organizes records into tables and links them with primary and foreign keys. Constraints preserve valid relationships; indexes support common lookups; SQL performs filtering, joins, grouping and updates. RoomRoute uses PostgreSQL in configured service mode and SQLite for local preview. Synthetic records are explicitly separated from registered accounts and real user submissions.", "RRBody"), para("4. SOFTWARE & HARDWARE REQUIREMENTS", "RRH2"), grid([["Category", "Requirement"], ["Software", "Python 3.12+, PostgreSQL, Redis, modern browser; Docker Compose for local multi-service preview"], ["Libraries", "argon2-cffi, psycopg with pool support, redis-py"], ["Hardware", "Development computer with internet for package setup; deployment resources must be selected and load-tested"], ["Current evidence", "Local preview database contains 50 synthetic owners, 200 synthetic renter profiles and 50 synthetic listings; no account or inquiry rows"]], [32*mm, 126*mm]), PageBreak()]
+story += [para("1. AIM", "RRH1"), para("To design and implement RoomRoute, a Nagpur-focused rental search platform that models owners, renters, accounts, room and flat listings, inquiries, and moderation using relational database operations.", "RRBody"), para("2. OBJECTIVES", "RRH2"), para("• Store owner, renter, account, listing, inquiry and moderation data with relational keys. • Search rooms and flats using location, budget, utilities, furnishing and parking. • Apply authentication, verification, inquiry, listing review and privacy workflows. • Demonstrate filtering, joins, aggregation, indexes and CRUD with synthetic preview data.", "RRBody"), para("3. THEORY", "RRH2"), para("A relational database organizes records into tables and links them with primary and foreign keys. Constraints preserve valid relationships; indexes support common lookups; SQL performs filtering, joins, grouping and updates. RoomRoute uses PostgreSQL in configured service mode and SQLite for local preview. Synthetic records are explicitly separated from registered accounts and real user submissions.", "RRBody"), para("4. SOFTWARE & HARDWARE REQUIREMENTS", "RRH2"), grid([["Category", "Requirement"], ["Software", "Python 3.12+, PostgreSQL, Redis, modern browser; Docker Compose for local multi-service preview"], ["Libraries", "argon2-cffi, psycopg with pool support, redis-py"], ["Hardware", "Development computer with internet for package setup; deployment resources must be selected and load-tested"], ["Current evidence", "Local preview database contains 50 synthetic owners, 200 synthetic renter profiles and 50 synthetic listings; no account or inquiry rows"]], [43*mm, 137*mm]), Spacer(1, 7*mm), para("RELATIONAL LINKS", "RRH2"), grid([["Parent record", "Relationship", "Dependent record"], ["owners.id", "One owner to many properties", "listings.owner_id"], ["listings.id", "One property to many inquiries", "inquiries.listing_id"], ["accounts.id", "One account to many sessions / tokens", "sessions.account_id / auth_tokens.account_id"], ["accounts.id", "One reporter to many safety reports", "listing_reports.reporter_id"]], [39*mm, 75*mm, 66*mm]), PageBreak()]
 
 # Pages 5–11: implementation extracts, not falsely a MySQL dump
 story += [para("5. ORIGINAL POSTGRESQL CODE — ACCOUNTS AND AUTHENTICATION", "RRH1"), para("RoomRoute's schema is created through additive migrations in server.py. The snippets below summarize the current PostgreSQL table definitions.", "RRSmall"), code("""CREATE TABLE accounts (
@@ -179,6 +193,13 @@ CREATE TABLE sessions (
   csrf_token TEXT NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE auth_tokens (
+  token_hash TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  purpose TEXT NOT NULL CHECK (purpose IN ('verify','reset')),
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ
 );"""), para("Passwords are stored as Argon2 hashes. Session tokens are random; only their digest is stored. Verification and reset tokens are hashed, expiring and single use.", "RRBody"), PageBreak()]
 story += [para("5. ORIGINAL POSTGRESQL CODE — OWNER, RENTER AND LISTING TABLES", "RRH1"), code("""CREATE TABLE owners (
   id TEXT PRIMARY KEY, name TEXT NOT NULL,
@@ -324,8 +345,8 @@ INNER JOIN owners o ON o.id=l.owner_id
 WHERE l.is_sample=1
 ORDER BY l.area, l.rent
 LIMIT 5;"""), PageBreak()]
-story += [para("8. OUTPUT — AGGREGATES, GROUPING AND SUBQUERY", "RRH1"), grid([["Metric from local sample fixture", "Result"], ["Synthetic listings", "50"], ["Synthetic owners", "50"], ["Synthetic renter profiles", "200"], ["Active account records", "0"], ["Submitted inquiries", "0"]], [104*mm, 54*mm]), Spacer(1, 8*mm), para("Use GROUP BY area or type to compare inventory counts and rent ranges. A subquery can select listings above the preview's average rent. Results describe only the fictional local seed data and are not evidence of market availability or demand.", "RRBody"), PageBreak()]
-story += [para("9. OUTPUT — INDEXES, VIEW AND TRIGGER", "RRH1"), para("Indexes present in the application schema support public listing order, area and rent filtering, inquiry lookups, session expiry, authentication attempts, pending email and moderation reports.", "RRBody"), grid([["Database object", "Current project status"], ["idx_listings_public_order", "Implemented"], ["idx_listings_public_area", "Implemented"], ["idx_listings_public_rent", "Implemented"], ["idx_inquiries_listing_order", "Implemented"], ["Student-facing Review View", "Not implemented"], ["Database trigger", "Not implemented"]], [87*mm, 71*mm]), Spacer(1, 5*mm), para("The app currently has no verified student review feature. It would be unsafe to publish unverified accusations about owners; a future review feature needs verified tenancy and dispute handling.", "RRNote"), PageBreak()]
+story += [para("8. OUTPUT — AGGREGATES, GROUPING AND SUBQUERY", "RRH1"), grid([["Metric from local sample fixture", "Result"], ["Synthetic listings", "50"], ["Synthetic owners", "50"], ["Synthetic renter profiles", "200"], ["Active account records", "0"], ["Submitted inquiries", "0"]], [104*mm, 54*mm]), Spacer(1, 8*mm), para("Use GROUP BY area or type to compare inventory counts and rent ranges. A subquery can select listings above the preview's average rent. Results describe only the fictional local seed data and are not evidence of market availability or demand.", "RRBody"), grid([["Sample area", "Listings", "Rent span / month"], ["Bajaj Nagar", "5", "₹8,500–₹10,500"], ["Civil Lines", "5", "₹25,000–₹27,000"], ["Dharampeth", "5", "₹10,500–₹12,500"], ["Laxmi Nagar", "5", "₹22,000–₹24,000"], ["Manish Nagar", "5", "₹15,500–₹17,500"], ["Pratap Nagar", "5", "₹6,000–₹8,000"], ["Ramdaspeth", "5", "₹9,000–₹11,000"], ["Sadar", "5", "₹5,500–₹7,500"], ["Trimurti Nagar", "5", "₹12,000–₹14,000"], ["Wardha Road", "5", "₹14,500–₹16,500"]], [53*mm, 25*mm, 80*mm]), PageBreak()]
+story += [para("9. OUTPUT — INDEXES, VIEW AND TRIGGER", "RRH1"), para("Indexes present in the application schema support public listing order, area and rent filtering, inquiry lookups, session expiry, authentication attempts, pending email and moderation reports.", "RRBody"), grid([["Database object", "Current project status"], ["idx_listings_public_order", "Implemented"], ["idx_listings_public_area", "Implemented"], ["idx_listings_public_rent", "Implemented"], ["idx_inquiries_listing_order", "Implemented"], ["Student-facing Review View", "Not implemented"], ["Database trigger", "Not implemented"]], [87*mm, 71*mm]), Spacer(1, 5*mm), para("The app currently has no verified student review feature. It would be unsafe to publish unverified accusations about owners; a future review feature needs verified tenancy and dispute handling.", "RRNoteInner"), PageBreak()]
 story += [para("10. CRUD OUTPUT — CREATE AND READ", "RRH1"), para("Owner submission is saved as a pending real listing. Public search only returns records approved by a moderator and marked active.", "RRBody"), grid([["Operation", "Illustrative result"], ["CREATE listing", "Saved with status = pending"], ["READ owner workspace", "Owner sees their pending listing"], ["READ public catalogue", "Pending listing is hidden"], ["READ sample listing", "Clearly marked; inquiry disabled"]], [55*mm, 103*mm]), para("This is an application-flow result. The report does not create records in the owner's database.", "RRNote"), PageBreak()]
 story += [para("11. CRUD OUTPUT — UPDATE AND DELETE", "RRH1"), grid([["Operation", "Behavior"], ["UPDATE availability", "Owner pauses an active real listing"], ["Relist", "Listing returns to moderation queue"], ["DELETE account", "Password verified; linked records removed"], ["Export account", "Authenticated account can download its data"]], [55*mm, 103*mm]), Spacer(1, 8*mm), para("Sample listings cannot be modified through the owner workspace. Account deletion and export endpoints exist, but a complete privacy program still requires operator policies, retention rules and tested backups.", "RRBody"), PageBreak()]
 

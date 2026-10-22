@@ -6,4 +6,5 @@ __pycache__/
 !.env.example
 *.sqlite3
 *.sqlite3-*
+/tmp/
 

@@ -21,7 +21,9 @@ services:
           name: roomroute-limits
           property: connectionString
       - key: ROOMROUTE_DB_POOL_SIZE
-        value: "10"
+        value: "4"
+      - key: ROOMROUTE_MAX_WORKERS
+        value: "4"
       - key: ROOMROUTE_PUBLIC_URL
         sync: false
       - key: ROOMROUTE_ALLOWED_HOSTS

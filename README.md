@@ -2,6 +2,8 @@
 
 RoomRoute is a Nagpur rental search service for student rooms and flats. The repository includes a clearly identified synthetic preview dataset plus an owner/renter service backend. Synthetic records are not real rentals, contacts, reviews, or users.
 
+**Launch status: local preview, not a live public service in this repository snapshot.** Newly submitted real listings do not yet have photo upload; the UI deliberately shows “Owner photos not provided” instead of a stock image. Do not use fictional records or sample photos to imply real availability.
+
 ## Run the preview
 
 For the quickest local run, Python 3.12+ is required:
@@ -37,6 +39,7 @@ The sample owners, listings, and renter profiles are synthetic and have no crede
 - Argon2 password storage, verified-email requirement, expiring single-use verification and password-reset tokens, secure production cookies, CSRF checks, and session revocation on password reset.
 - Inquiry records saved to PostgreSQL and queued in a durable SMTP outbox. The outbox retries failures and uses PostgreSQL row locks so replicas do not send the same pending message concurrently.
 - New owner listings remain private until a moderator approves them. Authenticated users can report listings; moderators can review or dismiss reports.
+- Owners can mark an active listing unavailable; bringing it back requires moderator review. Owners still cannot edit listing details after submission.
 - Signed-in users can download an account export and delete their account and associated listings, inquiries, reports, sessions, and queued email.
 - Docker image runs as a non-root user; Compose health checks gate app startup on PostgreSQL and Redis readiness.
 
@@ -53,4 +56,8 @@ Deploy the image to a container platform and provide managed PostgreSQL, Redis, 
 Never use the Compose default passwords or Mailpit for a public deployment. Use managed encrypted database/Redis services, backups with restore drills, alerting, log retention, and a reviewed domain email setup. Do not seed fictional data in a real environment. The app does not provision a cloud host, DNS, provider accounts, SMTP credentials, legal terms, or privacy notices for you.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md), [SECURITY.md](SECURITY.md), [SECURITY_REVIEW.md](SECURITY_REVIEW.md), and [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) before a public launch.
+
+## College-format project report
+
+The 21-page DBMS mini-project report and its regeneration script are in [`docs/reports/`](docs/reports/). The report follows the supplied college-format sequence, describes the current schema and local synthetic fixture, and marks unimplemented database and service features accurately. Rebuild it with `python docs/reports/build_report.py` after installing the optional report-generation dependency listed in `docs/reports/requirements.txt`.
 

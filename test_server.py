@@ -82,6 +82,36 @@ class PreviewDataSafetyTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts WHERE id='orphan'").fetchone()[0], 1)
 
 
+class ListingSerializationTests(unittest.TestCase):
+    def test_real_listing_never_uses_sample_photo_and_exposes_creation_time(self):
+        row = {
+            "id": "RR-real", "title": "Test room", "type": "Private room",
+            "owner_id": "OWN-test", "rent": 10000, "deposit": 20000,
+            "area": "Dharampeth", "furnishing": "Semi furnished",
+            "parking": 0, "electricity_included": 0,
+            "available_from": "2026-11-01", "photo": "https://images.unsplash.com/demo.jpg",
+            "summary": "Test listing", "amenities": "[]", "is_sample": 0,
+            "status": "active", "created_at": "2026-10-17 10:00:00",
+        }
+        serialized = server.listing_json(row)
+        self.assertIsNone(serialized["photo"])
+        self.assertEqual(serialized["createdAt"], "2026-10-17 10:00:00")
+
+    def test_sample_listing_keeps_its_explicitly_sample_image(self):
+        row = {
+            "id": "RR-sample", "title": "Test sample", "type": "Private room",
+            "owner_id": "OWN-sample", "rent": 10000, "deposit": 20000,
+            "area": "Dharampeth", "furnishing": "Semi furnished",
+            "parking": 0, "electricity_included": 0,
+            "available_from": "2026-11-01", "photo": "https://images.unsplash.com/demo.jpg",
+            "summary": "Sample listing", "amenities": "[]", "is_sample": 1,
+            "status": "active", "created_at": "2026-10-17 10:00:00",
+        }
+        serialized = server.listing_json(row)
+        self.assertEqual(serialized["photo"], "https://images.unsplash.com/demo.jpg")
+        self.assertTrue(serialized["isSample"])
+
+
 class SecurityHeaderTests(unittest.TestCase):
     def test_production_configuration_gate_requires_shared_services_and_tls(self):
         with patch.object(server,"IS_POSTGRES",False), patch.dict(os.environ,{"APP_ENV":"production","DATABASE_URL":"","REDIS_URL":"","SMTP_HOST":"","SMTP_FROM":"","ROOMROUTE_PUBLIC_URL":"","ROOMROUTE_ALLOWED_HOSTS":""},clear=False):
@@ -177,11 +207,13 @@ class ServiceFlowTests(unittest.TestCase):
     def create_verified_account(self,email,role):
         status,result=self.call("/api/auth/register","POST",{"name":"Test User","email":email,"password":"a-strong-test-password","role":role})
         self.assertEqual(status,201,result)
+        duplicate_status,duplicate=self.call("/api/auth/register","POST",{"name":"Test User","email":email,"password":"a-strong-test-password","role":role})
+        self.assertEqual((duplicate_status,duplicate),(status,result))
         with server.db_session() as db:
             body=db.execute("SELECT body FROM email_outbox WHERE recipient=? ORDER BY id DESC LIMIT 1",(email,)).fetchone()["body"]
-        token=re.search(r"[?]verify=([^\s]+)",body).group(1)
+        token=re.search(r"[#]verify=([^\s]+)",body).group(1)
         status,blocked=self.call("/api/auth/login","POST",{"email":email,"password":"a-strong-test-password"})
-        self.assertEqual(status,403,blocked)
+        self.assertEqual(status,401,blocked)
         status,result=self.call("/api/auth/verify","POST",{"token":token})
         self.assertEqual(status,200,result)
         self.assertEqual(self.call("/api/auth/verify","POST",{"token":token})[0],400)
@@ -190,6 +222,26 @@ class ServiceFlowTests(unittest.TestCase):
         self.assertEqual(status,200,result)
         self.assertTrue(result["user"]["isVerified"])
         return jar,result["csrfToken"],result["user"]
+
+    def test_listing_api_filters_and_bounds_pages(self):
+        server.seed_sample_data()
+        status,first=self.call("/api/listings?limit=20&offset=0&sort=rent-low")
+        self.assertEqual(status,200)
+        self.assertEqual(len(first["listings"]),20)
+        self.assertEqual(first["total"],50)
+        self.assertTrue(first["hasMore"])
+        status,last=self.call("/api/listings?limit=1000&offset=49")
+        self.assertEqual(status,200)
+        self.assertEqual(len(last["listings"]),1)
+        self.assertEqual(last["limit"],server.LISTING_PAGE_MAX)
+        status,filtered=self.call("/api/listings?area=Dharampeth&budget=10000&parking=yes")
+        self.assertEqual(status,200)
+        self.assertTrue(all(row["area"]=="Dharampeth" and row["rent"]<=10000 and row["parking"] for row in filtered["listings"]))
+
+    def test_login_throttle_runs_before_password_hash(self):
+        for _ in range(8):
+            self.assertEqual(self.call("/api/auth/login","POST",{"email":"missing@example.test","password":"incorrect-password"})[0],401)
+        self.assertEqual(self.call("/api/auth/login","POST",{"email":"missing@example.test","password":"incorrect-password"})[0],429)
 
     def test_verification_listing_approval_inquiry_report_and_privacy(self):
         owner_cookies,owner_csrf,owner=self.create_verified_account("owner@example.test","owner")
@@ -206,7 +258,10 @@ class ServiceFlowTests(unittest.TestCase):
         self.assertEqual(status,200,moderator)
         status,approved=self.call(f"/api/moderation/listings/{created['id']}","POST",{"action":"approve","note":"Checked in test."},mod_cookies,moderator["csrfToken"])
         self.assertEqual(status,200,approved)
-        self.assertEqual(len(self.call("/api/listings")[1]["listings"]),1)
+        public_listings=self.call("/api/listings")[1]["listings"]
+        self.assertEqual(len(public_listings),1)
+        self.assertIsNone(public_listings[0]["photo"])
+        self.assertTrue(public_listings[0]["createdAt"])
 
         renter_cookies,renter_csrf,renter=self.create_verified_account("renter@example.test","student")
         status,inquiry=self.call("/api/inquiries","POST",{"listingId":created["id"],"message":"Can I visit this room?"},renter_cookies,renter_csrf)
@@ -220,13 +275,21 @@ class ServiceFlowTests(unittest.TestCase):
         self.assertEqual(len(reports),1)
         self.assertEqual(self.call(f"/api/moderation/reports/{reports[0]['id']}","POST",{"status":"dismissed"},mod_cookies,moderator["csrfToken"])[0],200)
 
+        status,closed=self.call(f"/api/owner/listings/{created['id']}/availability","POST",{"action":"close"},owner_cookies,owner_csrf)
+        self.assertEqual(status,200,closed)
+        self.assertEqual(self.call("/api/listings")[1]["listings"],[])
+        self.assertEqual(self.call("/api/owner/listings",cookies=owner_cookies)[1][0]["status"],"paused")
+        status,relisted=self.call(f"/api/owner/listings/{created['id']}/availability","POST",{"action":"relist"},owner_cookies,owner_csrf)
+        self.assertEqual(status,200,relisted)
+        self.assertEqual(self.call("/api/owner/listings",cookies=owner_cookies)[1][0]["status"],"pending")
+
         status,export=self.call("/api/account/export",cookies=renter_cookies)
         self.assertEqual(status,200)
         self.assertEqual(export["account"]["email"],renter["email"])
         self.call("/api/auth/password-reset/request","POST",{"email":renter["email"]})
         with server.db_session() as db:
             reset_body=db.execute("SELECT body FROM email_outbox WHERE recipient=? ORDER BY id DESC LIMIT 1",(renter["email"],)).fetchone()["body"]
-        reset_token=re.search(r"[?]reset=([^\s]+)",reset_body).group(1)
+        reset_token=re.search(r"[#]reset=([^\s]+)",reset_body).group(1)
         new_password="a-new-strong-password"
         self.assertEqual(self.call("/api/auth/password-reset/complete","POST",{"token":reset_token,"password":new_password})[0],200)
         self.assertEqual(self.call("/api/auth/password-reset/complete","POST",{"token":reset_token,"password":new_password})[0],400)

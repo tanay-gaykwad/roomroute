@@ -18,7 +18,7 @@ from email.message import EmailMessage
 from contextlib import contextmanager
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from datetime import date, datetime, timedelta, timezone
 
 from argon2 import PasswordHasher
@@ -48,9 +48,12 @@ SEEDS = [
     ("A neat 1 BHK for your next chapter", "1 BHK flat", 14500, 29000, "Unfurnished", 1, 1, "photo-1600607687644-c7171b42498f"),
 ]
 PASSWORD_HASHER = PasswordHasher()
+DUMMY_PASSWORD_HASH = PASSWORD_HASHER.hash(secrets.token_urlsafe(32))
 SESSION_COOKIE = "roomroute_session"
 SESSION_DAYS = 7
 MAX_REQUEST_BYTES = 20_000
+LISTING_PAGE_DEFAULT = 50
+LISTING_PAGE_MAX = 100
 EMAIL_RE = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z]{2,63})+$")
 
 
@@ -209,6 +212,10 @@ def init_db():
                 "CREATE INDEX IF NOT EXISTS idx_reports_status ON listing_reports(status,created_at)",
                 "CREATE INDEX IF NOT EXISTS idx_auth_attempts_lookup ON auth_attempts(ip_address,email,failed_at)",
                 "CREATE INDEX IF NOT EXISTS idx_listings_public_order ON listings(status,created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_listings_public_area ON listings(status,area,created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_listings_public_type ON listings(status,type,created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_listings_public_rent ON listings(status,rent)",
+                "CREATE INDEX IF NOT EXISTS idx_listings_public_furnishing ON listings(status,furnishing)",
                 "CREATE INDEX IF NOT EXISTS idx_inquiries_listing_order ON inquiries(listing_id,id DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_inquiries_student ON inquiries(student_id)",
             ]
@@ -239,6 +246,10 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_auth_attempts_lookup ON auth_attempts(ip_address,email,failed_at);
         CREATE INDEX IF NOT EXISTS idx_request_limits_lookup ON request_limits(action,ip_address,occurred_at);
         CREATE INDEX IF NOT EXISTS idx_listings_public_order ON listings(status,created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_listings_public_area ON listings(status,area,created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_listings_public_type ON listings(status,type,created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_listings_public_rent ON listings(status,rent);
+        CREATE INDEX IF NOT EXISTS idx_listings_public_furnishing ON listings(status,furnishing);
         CREATE INDEX IF NOT EXISTS idx_inquiries_listing_order ON inquiries(listing_id,id DESC);
         CREATE INDEX IF NOT EXISTS idx_inquiries_student ON inquiries(student_id);
         """)
@@ -296,6 +307,9 @@ def rows(db, sql, params=()):
 
 
 def listing_json(row):
+    # Never present a stock/demo image as evidence of a real property's condition.
+    is_sample = bool(row.get("is_sample"))
+    row["photo"] = row.get("photo") if is_sample else None
     row.pop("moderation_note",None)
     row["parking"] = bool(row["parking"])
     row["electricityIncluded"] = bool(row.pop("electricity_included"))
@@ -308,7 +322,7 @@ def listing_json(row):
     row["beds"] = 2 if row["type"] == "2 BHK flat" else 1
     row["baths"] = 2 if row["type"] == "2 BHK flat" else 1
     row["gallery"] = [row["photo"], row["photo"]]
-    row["updatedDays"] = 0
+    row["createdAt"] = row.get("created_at")
     row["address"] = "Near neighborhood landmark"
     return row
 
@@ -478,11 +492,55 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({"status": "unavailable"}, 503)
         with db_session() as db:
             if path == "/api/listings":
-                result = rows(db, "SELECT * FROM listings WHERE status='active' ORDER BY created_at DESC, id")
-                owners = rows(db, "SELECT DISTINCT o.id,o.name,o.is_sample FROM owners o JOIN listings l ON l.owner_id=o.id WHERE l.status='active'")
+                try:
+                    if not self.allow_write(db,"listing_read",120,60):
+                        return self.send_json({"error":"Too many search requests. Please slow down."},429)
+                except RuntimeError:
+                    return self.send_json({"error":"Search is temporarily unavailable."},503)
+                query=parse_qs(urlparse(self.path).query)
+                def one(name, default=""):
+                    return query.get(name,[default])[0]
+                try:
+                    limit=max(1,min(LISTING_PAGE_MAX,int(one("limit",str(LISTING_PAGE_DEFAULT)))))
+                    offset=max(0,min(10_000_000,int(one("offset","0"))))
+                except ValueError:
+                    return self.send_json({"error":"Invalid pagination values."},400)
+                clauses=["status='active'"]
+                params=[]
+                for key,column in (("area","area"),("type","type"),("furnish","furnishing")):
+                    value=one(key)
+                    if value:
+                        clauses.append(f"{column}=?")
+                        params.append(value[:100])
+                budget=one("budget")
+                if budget:
+                    try: budget_value=max(0,min(10_000_000,int(budget)))
+                    except ValueError: return self.send_json({"error":"Invalid budget filter."},400)
+                    clauses.append("rent<=?"); params.append(budget_value)
+                setup=one("setup")
+                if setup in {"Shared","Private"}:
+                    clauses.append("type=?" if setup=="Shared" else "type<>?"); params.append("Shared room")
+                if one("parking")=="yes": clauses.append("parking=1")
+                utility=one("utility")
+                if utility in {"included","separate"}:
+                    clauses.append("electricity_included=?"); params.append(1 if utility=="included" else 0)
+                saved_ids=[value[:100] for value in one("saved").split(",") if value][:200]
+                if "saved" in query:
+                    if not saved_ids: clauses.append("1=0")
+                    else:
+                        clauses.append("id IN ("+",".join("?" for _ in saved_ids)+")"); params.extend(saved_ids)
+                where=" AND ".join(clauses)
+                total=db.execute(f"SELECT COUNT(*) FROM listings WHERE {where}",params).fetchone()[0]
+                order={"rent-low":"rent ASC, created_at DESC, id","rent-high":"rent DESC, created_at DESC, id","newest":"created_at DESC, id","recommended":"created_at DESC, id"}.get(one("sort","recommended"),"created_at DESC, id")
+                result=rows(db,f"SELECT * FROM listings WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?",(*params,limit,offset))
+                page_owner_ids=list(dict.fromkeys(row["owner_id"] for row in result))
+                owners=[]
+                if page_owner_ids:
+                    marks=",".join("?" for _ in page_owner_ids)
+                    owners=rows(db,f"SELECT id,name,is_sample FROM owners WHERE id IN ({marks})",page_owner_ids)
                 for owner in owners:
                     owner["isSample"] = bool(owner.pop("is_sample", 0))
-                self.send_json({"listings": [listing_json(r) for r in result], "owners": owners})
+                self.send_json({"listings": [listing_json(r) for r in result], "owners": owners,"total":total,"limit":limit,"offset":offset,"hasMore":offset+len(result)<total})
                 return
             if path == "/api/summary":
                 self.send_json({"listings": db.execute("SELECT COUNT(*) FROM listings WHERE status='active'").fetchone()[0], "owners": db.execute("SELECT COUNT(*) FROM owners").fetchone()[0], "students": db.execute("SELECT COUNT(*) FROM users WHERE role='student'").fetchone()[0], "employees": db.execute("SELECT COUNT(*) FROM users WHERE role='employee'").fetchone()[0], "inquiries": db.execute("SELECT COUNT(*) FROM inquiries").fetchone()[0], "sampleListings": db.execute("SELECT COUNT(*) FROM listings WHERE is_sample=1 AND status='active'").fetchone()[0], "sampleOwners": db.execute("SELECT COUNT(*) FROM owners WHERE is_sample=1").fetchone()[0], "sampleUsers": db.execute("SELECT COUNT(*) FROM users WHERE is_sample=1").fetchone()[0]})
@@ -548,7 +606,7 @@ class Handler(SimpleHTTPRequestHandler):
                         if not 2 <= len(name) <= 80 or len(email) > 254 or not EMAIL_RE.fullmatch(email) or ".." in email.split("@")[0] or email.split("@")[0].startswith(".") or email.split("@")[0].endswith(".") or role not in {"owner", "student", "employee"} or len(password) < 12 or len(password) > 256:
                             return self.send_json({"error": "Use a name, valid email, account type, and password between 12 and 256 characters."}, 400)
                         if db.execute("SELECT 1 FROM accounts WHERE email=? UNION SELECT 1 FROM owners WHERE lower(email)=? UNION SELECT 1 FROM users WHERE lower(email)=?", (email,email,email)).fetchone():
-                            return self.send_json({"error": "An account with this email already exists."}, 409)
+                            return self.send_json({"message":"If registration can be completed, check your inbox for next steps."},201)
                         account_id = f"OWN-{secrets.token_hex(12)}" if role == "owner" else f"USR-{secrets.token_hex(12)}"
                         if role == "owner":
                             db.execute("INSERT INTO owners(id,name,email,is_sample) VALUES(?,?,?,0)", (account_id,name,email))
@@ -560,8 +618,8 @@ class Handler(SimpleHTTPRequestHandler):
                         expires = datetime.now(timezone.utc) + timedelta(hours=24)
                         db.execute("INSERT INTO auth_tokens(token_hash,account_id,purpose,expires_at) VALUES(?,?,?,?)", (token_hash,account_id,"verify",expires if IS_POSTGRES else expires.isoformat()))
                         base_url = os.environ.get("ROOMROUTE_PUBLIC_URL", "http://127.0.0.1:8765").rstrip("/")
-                        queue_email(db,email,"Verify your RoomRoute account",f"Hello {name},\n\nVerify your email within 24 hours: {base_url}/?verify={raw_token}\n\nIf you did not create this account, ignore this message.")
-                        self.send_json({"message":"Check your email for a verification link. You can sign in after verifying your account."},201)
+                        queue_email(db,email,"Verify your RoomRoute account",f"Hello {name},\n\nVerify your email within 24 hours: {base_url}/#verify={raw_token}\n\nIf you did not create this account, ignore this message.")
+                        self.send_json({"message":"If registration can be completed, check your inbox for next steps."},201)
                         return
                     if path == "/api/auth/verify":
                         raw_token = str(payload.get("token", ""))
@@ -584,7 +642,7 @@ class Handler(SimpleHTTPRequestHandler):
                             db.execute("UPDATE auth_tokens SET used_at=? WHERE account_id=? AND purpose='verify' AND used_at IS NULL",(database_now(),account["id"]))
                             db.execute("INSERT INTO auth_tokens(token_hash,account_id,purpose,expires_at) VALUES(?,?,?,?)", (token_hash,account["id"],"verify",expires if IS_POSTGRES else expires.isoformat()))
                             base_url=os.environ.get("ROOMROUTE_PUBLIC_URL","http://127.0.0.1:8765").rstrip("/")
-                            queue_email(db,email,"Verify your RoomRoute account",f"Hello {account['name']},\n\nVerify your email: {base_url}/?verify={raw_token}")
+                            queue_email(db,email,"Verify your RoomRoute account",f"Hello {account['name']},\n\nVerify your email: {base_url}/#verify={raw_token}")
                         return self.send_json({"message":"If an unverified account exists, a verification link has been sent."})
                     if path == "/api/auth/password-reset/request":
                         if not self.allow_write(db,"password_reset",5,3600): return self.send_json({"error":"Try again later."},429)
@@ -599,7 +657,7 @@ class Handler(SimpleHTTPRequestHandler):
                             db.execute("UPDATE auth_tokens SET used_at=? WHERE account_id=? AND purpose='reset' AND used_at IS NULL",(database_now(),account["id"]))
                             db.execute("INSERT INTO auth_tokens(token_hash,account_id,purpose,expires_at) VALUES(?,?,?,?)",(token_hash,account["id"],"reset",expires if IS_POSTGRES else expires.isoformat()))
                             base_url=os.environ.get("ROOMROUTE_PUBLIC_URL","http://127.0.0.1:8765").rstrip("/")
-                            queue_email(db,email,"Reset your RoomRoute password",f"Hello {account['name']},\n\nReset your password within 30 minutes: {base_url}/?reset={raw_token}\n\nIf you did not request this, ignore this message.")
+                            queue_email(db,email,"Reset your RoomRoute password",f"Hello {account['name']},\n\nReset your password within 30 minutes: {base_url}/#reset={raw_token}\n\nIf you did not request this, ignore this message.")
                         return self.send_json({"message":"If an account exists for that email, password reset instructions have been sent."})
                     if path == "/api/auth/password-reset/complete":
                         raw_token=str(payload.get("token","")); password=str(payload.get("password",""))
@@ -632,6 +690,9 @@ class Handler(SimpleHTTPRequestHandler):
                         password = str(payload.get("password", ""))
                         if len(email) > 254 or len(password) > 256:
                             return self.send_json({"error":"Email or password is invalid."},400)
+                        email_key=hashlib.sha256(email.encode()).hexdigest()[:32]
+                        if not self.allow_write(db,"login_ip",30,900) or not self.allow_write(db,f"login_email:{email_key}",8,900):
+                            return self.send_json({"error":"Too many sign-in attempts. Try again in 15 minutes."},429)
                         ip = self.client_ip()
                         since = datetime.now(timezone.utc)-timedelta(minutes=15)
                         if not IS_POSTGRES: since=since.strftime("%Y-%m-%d %H:%M:%S")
@@ -642,15 +703,14 @@ class Handler(SimpleHTTPRequestHandler):
                             return self.send_json({"error":"Too many sign-in attempts. Try again in 15 minutes."},429)
                         account=db.execute("SELECT * FROM accounts WHERE email=? AND is_active=1",(email,)).fetchone()
                         try:
+                            PASSWORD_HASHER.verify(account["password_hash"] if account else DUMMY_PASSWORD_HASH,password)
                             if not account:
-                                PASSWORD_HASHER.hash("constant-time-invalid-user-check")
                                 raise VerifyMismatchError
-                            PASSWORD_HASHER.verify(account["password_hash"],password)
                         except (VerifyMismatchError, ValueError):
                             db.execute("INSERT INTO auth_attempts(ip_address,email) VALUES(?,?)",(ip,email[:254]))
                             return self.send_json({"error":"Email or password is incorrect."},401)
                         if not account["is_verified"]:
-                            return self.send_json({"error":"Verify your email before signing in. You can request a new link."},403)
+                            return self.send_json({"error":"Email or password is incorrect."},401)
                         db.execute("DELETE FROM auth_attempts WHERE ip_address=? AND email=?",(ip,email))
                         csrf=self.create_session(db,account["id"])
                         self.send_json({"user":{"id":account["id"],"email":account["email"],"name":account["name"],"role":account["role"],"isVerified":bool(account["is_verified"])},"csrfToken":csrf})
@@ -718,8 +778,22 @@ class Handler(SimpleHTTPRequestHandler):
                     if not title or len(title) > 100 or kind not in {"Private room", "Shared room", "1 BHK flat", "2 BHK flat"} or area not in AREAS or furnishing not in {"Fully furnished", "Semi furnished", "Unfurnished"} or rent < 1 or rent > 1000000 or deposit < 0 or deposit > 10000000 or not valid_date or len(summary) > 500 or type(payload.get("parking")) is not bool or type(payload.get("electricityIncluded")) is not bool:
                         return self.send_json({"error": "Enter a title, valid property type, Nagpur area, and realistic rent and deposit."}, 400)
                     new_id = f"RR-{secrets.token_hex(12)}"
-                    db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'pending')", (new_id, current["id"], title, kind, rent, deposit, area, furnishing, int(payload["parking"]), int(payload["electricityIncluded"]), available_from, "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=80", summary, json.dumps([])))
+                    db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'pending')", (new_id, current["id"], title, kind, rent, deposit, area, furnishing, int(payload["parking"]), int(payload["electricityIncluded"]), available_from, "", summary, json.dumps([])))
                     return self.send_json({"id": new_id, "status":"pending", "message": "Listing submitted for review. It will appear publicly after approval."}, 201)
+                if path.startswith("/api/owner/listings/") and path.endswith("/availability"):
+                    if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
+                    current=self.require_session(db,role="owner",csrf=True)
+                    if not current: return
+                    if not self.allow_write(db,"owner_listing_availability",20,3600): return self.send_json({"error":"Too many listing changes. Try again later."},429)
+                    listing_id=path[len("/api/owner/listings/"):-len("/availability")].strip("/")
+                    action=str(payload.get("action",""))
+                    transition={"close":("active","paused"),"relist":("paused","pending")}.get(action)
+                    if not listing_id or not transition: return self.send_json({"error":"Choose close or relist."},400)
+                    previous_status,next_status=transition
+                    changed=db.execute("UPDATE listings SET status=? WHERE id=? AND owner_id=? AND is_sample=0 AND status=?",(next_status,listing_id,current["id"],previous_status)).rowcount
+                    if not changed: return self.send_json({"error":"This listing cannot be changed. Refresh the page and check its current status."},404)
+                    message="Listing marked unavailable." if action=="close" else "Listing sent for moderation before it is relisted."
+                    return self.send_json({"status":next_status,"message":message})
                 if path.startswith("/api/listings/") and path.endswith("/report"):
                     if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
                     current=self.require_session(db,csrf=True)
@@ -776,7 +850,7 @@ class BoundedThreadingHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     request_queue_size = 128
 
-    def __init__(self, address, handler, max_workers=64):
+    def __init__(self, address, handler, max_workers=16):
         self._worker_slots=__import__("threading").BoundedSemaphore(max_workers)
         super().__init__(address,handler)
 
@@ -818,9 +892,10 @@ def validate_production_config():
         port=int(os.environ.get("SMTP_PORT","587"))
         if not 1<=port<=65535: raise ValueError
         pool_size=int(os.environ.get("ROOMROUTE_DB_POOL_SIZE","20"))
-        if not 1<=pool_size<=64: raise ValueError
+        max_workers=int(os.environ.get("ROOMROUTE_MAX_WORKERS","16"))
+        if not 1<=pool_size<=64 or not 4<=max_workers<=32: raise ValueError
     except ValueError as exc:
-        raise SystemExit("Production startup refused. SMTP_PORT and ROOMROUTE_DB_POOL_SIZE must be valid numeric values.") from exc
+        raise SystemExit("Production startup refused. SMTP_PORT, ROOMROUTE_DB_POOL_SIZE, and ROOMROUTE_MAX_WORKERS must be valid numeric values (workers: 4-32).") from exc
     hosts=[value.strip() for value in os.environ["ROOMROUTE_ALLOWED_HOSTS"].split(",") if value.strip()]
     parsed_hosts=[urlparse("//"+value) for value in hosts]
     try:
@@ -854,6 +929,15 @@ if __name__ == "__main__":
     action.add_argument("--remove-sample-data", action="store_true", help="Delete sample inquiries, listings, owners, and renter profiles")
     action.add_argument("--create-moderator", action="store_true", help="Create an initial moderation account interactively")
     args = parser.parse_args()
+    production=os.environ.get("APP_ENV", "development").lower() == "production"
+    if production:
+        if args.seed_sample_data or args.remove_sample_data or os.environ.get("ROOMROUTE_SEED_DATA", "0") == "1":
+            raise SystemExit("Production startup refused: sample data operations are disabled in production.")
+        if args.create_moderator:
+            if not IS_POSTGRES:
+                raise SystemExit("Production moderator setup requires DATABASE_URL pointing to PostgreSQL.")
+        else:
+            validate_production_config()
     init_db()
     if args.create_moderator:
         import getpass
@@ -875,16 +959,14 @@ if __name__ == "__main__":
         remove_sample_data()
         print("Sample records removed. User-created non-sample records were retained.")
         raise SystemExit(0)
-    production=os.environ.get("APP_ENV", "development").lower() == "production"
-    if production:
-        validate_production_config()
     host = os.environ.get("ROOMROUTE_HOST", "0.0.0.0" if production else "127.0.0.1")
     port = int(os.environ.get("ROOMROUTE_PORT", os.environ.get("PORT", "8765")))
     if not production and host not in {"127.0.0.1", "localhost", "::1"} and os.environ.get("ROOMROUTE_CONTAINER") != "1":
         raise SystemExit("This preview server is local-only and refuses non-loopback bind addresses.")
     if os.environ.get("ROOMROUTE_SEED_DATA", "0") == "1":
         print("Sample data loaded." if seed_sample_data() else "Sample data already present.")
-    server = BoundedThreadingHTTPServer((host, port), Handler)
+    max_workers=int(os.environ.get("ROOMROUTE_MAX_WORKERS","16"))
+    server = BoundedThreadingHTTPServer((host, port), Handler,max_workers=max_workers)
     import threading
     threading.Thread(target=outbox_worker,daemon=True,name="roomroute-email-outbox").start()
     print(f"RoomRoute {'production service' if production else 'local preview'} listening on {host}:{port}")

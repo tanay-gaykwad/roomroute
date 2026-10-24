@@ -1,6 +1,8 @@
 # RoomRoute
 
-RoomRoute is a Nagpur rental search service for student rooms and flats. The repository includes a clearly identified synthetic preview dataset plus an owner/renter service backend. Synthetic records are not real rentals, contacts, reviews, or users.
+RoomRoute is an independent software project for finding and listing rental rooms and flats in Nagpur. It is being built as a portfolio product, with a focused neighborhood pilot, renter search and shortlisting, owner listing submission, and service-side safeguards. It is not a college DBMS project.
+
+The repository includes an explicitly labelled synthetic preview dataset for trying the interface. Those records are not real rentals, contacts, reviews, or users.
 
 **Launch status: local preview, not a live public service in this repository snapshot.** Newly submitted real listings do not yet have photo upload; the UI deliberately shows “Owner photos not provided” instead of a stock image. Do not use fictional records or sample photos to imply real availability.
 
@@ -39,6 +41,9 @@ The sample owners, listings, and renter profiles are synthetic and have no crede
 - Argon2 password storage, verified-email requirement, expiring single-use verification and password-reset tokens, secure production cookies, CSRF checks, and session revocation on password reset.
 - Inquiry records saved to PostgreSQL and queued in a durable SMTP outbox. The outbox retries failures and uses PostgreSQL row locks so replicas do not send the same pending message concurrently.
 - New owner listings remain private until a moderator approves them. Authenticated users can report listings; moderators can review or dismiss reports.
+- The initial neighborhood pilot is Lokmanya Nagar, Digdoh Hills, Wanadongri, Hingna Road, and Hingna MIDC. Other Nagpur areas remain selectable for the existing preview.
+- Each listing states whether rent and deposit apply per person/bed or to the whole place. New owner submissions require an authorization attestation, stored with its submission time; this is not proof of ownership and manual checks are still required.
+- Owner submissions must state whether maintenance is included, separately charged, or not charged. Legacy/sample records remain “not specified” rather than being assigned a guessed cost. Browse budget and sort controls compare rent; separately billed maintenance and electricity are displayed separately and should be confirmed with the owner.
 - Owners can mark an active listing unavailable; bringing it back requires moderator review. Owners still cannot edit listing details after submission.
 - Signed-in users can download an account export and delete their account and associated listings, inquiries, reports, sessions, and queued email.
 - Docker image runs as a non-root user; Compose health checks gate app startup on PostgreSQL and Redis readiness.
@@ -57,7 +62,7 @@ Never use the Compose default passwords or Mailpit for a public deployment. Use 
 
 See [DEPLOYMENT.md](DEPLOYMENT.md), [SECURITY.md](SECURITY.md), [SECURITY_REVIEW.md](SECURITY_REVIEW.md), and [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) before a public launch.
 
-## College-format project report
+## Supplementary database report
 
-The 21-page DBMS mini-project report and its regeneration script are in [`docs/reports/`](docs/reports/). The report follows the supplied college-format sequence, describes the current schema and local synthetic fixture, and marks unimplemented database and service features accurately. Rebuild it with `python docs/reports/build_report.py` after installing the optional report-generation dependency listed in `docs/reports/requirements.txt`.
+An optional database-focused report and its regeneration script are in [`docs/reports/`](docs/reports/). This supplementary document follows a previously requested academic format; it does not define RoomRoute’s identity or imply that every documented service capability is deployed. Rebuild it with `python docs/reports/build_report.py` after installing the optional report-generation dependency listed in `docs/reports/requirements.txt`.
 

@@ -96,6 +96,8 @@ class ListingSerializationTests(unittest.TestCase):
         serialized = server.listing_json(row)
         self.assertIsNone(serialized["photo"])
         self.assertEqual(serialized["createdAt"], "2026-10-17 10:00:00")
+        self.assertEqual(serialized["maintenanceMode"], "unknown")
+        self.assertIsNone(serialized["estimatedMonthlyCost"])
 
     def test_sample_listing_keeps_its_explicitly_sample_image(self):
         row = {
@@ -245,7 +247,12 @@ class ServiceFlowTests(unittest.TestCase):
 
     def test_verification_listing_approval_inquiry_report_and_privacy(self):
         owner_cookies,owner_csrf,owner=self.create_verified_account("owner@example.test","owner")
-        status,created=self.call("/api/listings","POST",{"title":"Bright room near campus","type":"Private room","area":"Dharampeth","rent":11000,"deposit":22000,"furnishing":"Semi furnished","availableFrom":"2026-11-01","parking":True,"electricityIncluded":False,"summary":"A genuine test listing."},owner_cookies,owner_csrf)
+        listing_payload={"title":"Bright room near campus","type":"Private room","area":"Dharampeth","rent":11000,"deposit":22000,"rentBasis":"whole_property","maintenanceMode":"extra","maintenanceAmount":750,"ownerAuthorized":True,"furnishing":"Semi furnished","availableFrom":"2026-11-01","parking":True,"electricityIncluded":False,"summary":"A genuine test listing."}
+        unauthorized={**listing_payload,"ownerAuthorized":False}
+        self.assertEqual(self.call("/api/listings","POST",unauthorized,owner_cookies,owner_csrf)[0],400)
+        invalid_cost={**listing_payload,"maintenanceAmount":0}
+        self.assertEqual(self.call("/api/listings","POST",invalid_cost,owner_cookies,owner_csrf)[0],400)
+        status,created=self.call("/api/listings","POST",listing_payload,owner_cookies,owner_csrf)
         self.assertEqual(status,201,created)
         self.assertEqual(created["status"],"pending")
         self.assertEqual(self.call("/api/listings")[1]["listings"],[])
@@ -262,6 +269,9 @@ class ServiceFlowTests(unittest.TestCase):
         self.assertEqual(len(public_listings),1)
         self.assertIsNone(public_listings[0]["photo"])
         self.assertTrue(public_listings[0]["createdAt"])
+        self.assertEqual(public_listings[0]["maintenanceMode"],"extra")
+        self.assertEqual(public_listings[0]["maintenanceAmount"],750)
+        self.assertEqual(public_listings[0]["estimatedMonthlyCost"],11750)
 
         renter_cookies,renter_csrf,renter=self.create_verified_account("renter@example.test","student")
         status,inquiry=self.call("/api/inquiries","POST",{"listingId":created["id"],"message":"Can I visit this room?"},renter_cookies,renter_csrf)

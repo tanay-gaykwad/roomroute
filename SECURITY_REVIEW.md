@@ -1,8 +1,8 @@
 # RoomRoute security review
 
-**Reviewed:** 2026-10-18
+**Reviewed:** 2026-10-27
 **Scope:** Python HTTP service, PostgreSQL/SQLite schema paths, Redis write limits, account flows, email outbox, listing/report moderation, privacy endpoints, browser UI, and container setup.
-**Outcome:** implementation review only. No penetration test or independent audit has been performed.
+**Outcome:** source and automated test review only. This is not a penetration test or independent security audit, and it cannot guarantee that the service will not be compromised.
 
 ## Controls added
 
@@ -21,6 +21,9 @@
 - Login and registration responses avoid telling a caller whether an email is already registered or verified. Unknown-account login checks use a precomputed dummy Argon2 hash for comparable password work.
 - Public inventory reads are filtered and paginated in PostgreSQL/SQLite, with a maximum of 100 listings per response. Count queries and owner data are scoped to the selected page.
 - Production config is validated before database initialization. Production blocks sample data operations and cannot fall back to SQLite. The threaded server defaults to 16 workers and production configuration bounds it to 4–32.
+- Static content is served from a route allowlist; tests confirm repository files, dotfiles, and the local SQLite database return 404. CORS is not enabled because the web UI and API are same-origin.
+- Content Security Policy now blocks inline scripts/styles, plugins, framing, and non-same-origin API calls; the response also disables unused browser permissions and cross-domain policy files. HSTS is sent only in production.
+- The browser connection-error view inserts server-provided error text as text nodes rather than interpreting it as HTML.
 
 ## Remaining risks and operating requirements
 
@@ -38,5 +41,5 @@
 
 ## Verification performed for this change
 
-Local unit tests cover bounded request bodies, sample-data safety, cookies, Origin/Host validation, owner listing availability transitions, and local throttling. Listing serialization tests ensure real records do not inherit sample photos and expose creation timestamps for sorting. CI installs declared dependencies, runs the unit suite and static syntax checks, audits Python dependencies, and builds the Docker image. A live PostgreSQL/Redis/SMTP deployment has not been exercised in this workspace.
+Local tests passed on 2026-10-27, including static page headers, denial of dotfiles/source/database paths, bounded request bodies, sample-data safety, cookies, Origin/Host validation, owner listing availability transitions, account flows, moderation, and local throttling. The PostgreSQL/Redis integration test was skipped because `TEST_POSTGRES_URL` was not configured. Python and browser JavaScript syntax checks passed. `pip-audit` reported no known vulnerabilities for the declared Python dependency ranges on this date. A live PostgreSQL/Redis/SMTP deployment, deployment environment variables, external database backups, and a representative load test have not been validated in this workspace.
 

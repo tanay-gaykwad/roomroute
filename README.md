@@ -36,6 +36,7 @@ The sample owners, listings, and renter profiles are synthetic and have no crede
 
 ## Service features
 
+- A RoomRoute-branded, multi-page experience for renter discovery, saved places, owner onboarding, safety guidance, and the renter journey.
 - PostgreSQL-backed data with a bounded connection pool when `DATABASE_URL` is set; production refuses to start without PostgreSQL.
 - Shared Redis fixed-window throttles for registration, listing creation, inquiries, and password-reset email requests.
 - Argon2 password storage, verified-email requirement, expiring single-use verification and password-reset tokens, secure production cookies, CSRF checks, and session revocation on password reset.

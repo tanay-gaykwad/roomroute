@@ -382,7 +382,10 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' https://images.unsplash.com data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+        self.send_header("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), microphone=(), payment=(), usb=()")
+        self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+        self.send_header("X-Permitted-Cross-Domain-Policies", "none")
+        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' https://images.unsplash.com data:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'; worker-src 'self'")
         if os.environ.get("APP_ENV", "development").lower() == "production":
             self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         super().end_headers()
@@ -613,7 +616,7 @@ class Handler(SimpleHTTPRequestHandler):
                 else:
                     self.send_json({"user": None, "csrfToken": None})
                 return
-            if path in {"/", "/styles.css", "/app.js", "/data.js"}:
+            if path in {"/", "/index.html", "/styles.css", "/app.js", "/pages.css", "/saved.js", "/nav.js", "/how-it-works.html", "/safety.html", "/owners.html", "/saved.html"}:
                 return super().do_GET()
         self.send_json({"error": "Not found"}, 404)
 

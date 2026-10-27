@@ -225,6 +225,32 @@ class ServiceFlowTests(unittest.TestCase):
         self.assertTrue(result["user"]["isVerified"])
         return jar,result["csrfToken"],result["user"]
 
+    def test_pages_are_served_with_security_headers_and_private_files_are_denied(self):
+        for path in ("/", "/how-it-works.html", "/safety.html", "/owners.html", "/saved.html", "/pages.css", "/saved.js", "/nav.js"):
+            request=urllib.request.Request(self.base+path,headers={"Origin":self.base})
+            try:
+                response=urllib.request.urlopen(request,timeout=4)
+            except urllib.error.URLError as error:
+                if getattr(error.reason,"winerror",None)==10013: self.skipTest("Sandbox does not permit local test sockets")
+                raise
+            with response:
+                self.assertEqual(response.status,200,path)
+                self.assertEqual(response.headers.get("X-Content-Type-Options"),"nosniff")
+                self.assertEqual(response.headers.get("X-Frame-Options"),"DENY")
+                self.assertIn("object-src 'none'",response.headers.get("Content-Security-Policy",""))
+                self.assertIsNone(response.headers.get("Access-Control-Allow-Origin"))
+        for path in ("/.env", "/.git/config", "/server.py", "/README.md", "/roomroute.sqlite3"):
+            self.assertEqual(self.call(path)[0],404,path)
+
+    def test_admin_and_owner_routes_require_their_roles(self):
+        self.assertEqual(self.call("/api/moderation/listings")[0],401)
+        self.assertEqual(self.call("/api/moderation/reports")[0],401)
+        self.assertEqual(self.call("/api/owner/listings")[0],401)
+        cookies,_,_=self.create_verified_account("student-scope@example.test","student")
+        self.assertEqual(self.call("/api/moderation/listings",cookies=cookies)[0],403)
+        self.assertEqual(self.call("/api/moderation/reports",cookies=cookies)[0],403)
+        self.assertEqual(self.call("/api/owner/listings",cookies=cookies)[0],403)
+
     def test_listing_api_filters_and_bounds_pages(self):
         server.seed_sample_data()
         status,first=self.call("/api/listings?limit=20&offset=0&sort=rent-low")

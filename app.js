@@ -70,12 +70,13 @@
     $("#savedCount").textContent=state.saved.size;
   };
 
-  function showAuth(preferredRole = null) {
+  function showAuth(preferredRole = null, initialMode = "login") {
     const chosenRole = preferredRole || "student";
     showModal(`<div class="dashboard-head"><div class="detail-eyebrow">ROOMROUTE ACCOUNT</div><h2 id="modalTitle">Welcome back</h2><p>Sign in to send inquiries or manage a listing. New here? Create an account.</p></div><div class="auth-tabs"><button type="button" class="auth-tab active" id="loginTab">Sign in</button><button type="button" class="auth-tab" id="registerTab">Create account</button></div><form class="inquiry-form auth-form" id="authForm"><div id="authNameField" hidden><label>Your name<input name="name" minlength="2" maxlength="80" autocomplete="name" placeholder="Your full name"/></label></div><label>Email<input name="email" type="email" required maxlength="254" autocomplete="email" placeholder="you@example.com"/></label><div id="authRoleField" hidden><label>I'm joining as<select name="role"><option value="${escapeHTML(chosenRole)}">${chosenRole==="owner"?"Property owner":"Student"}</option>${chosenRole==="owner"?'<option value="student">Student</option><option value="employee">Employee</option>':'<option value="employee">Employee</option><option value="owner">Property owner</option>'}</select></label></div><label>Password<input name="password" type="password" required minlength="12" maxlength="256" autocomplete="current-password" placeholder="At least 12 characters"/></label><button class="text-button" type="button" id="forgotPassword">Forgot password?</button><button class="text-button" type="button" id="resendVerification">Resend verification email</button><p class="auth-hint" id="authHint">Your account requires a verified email address.</p><button class="search-button" type="submit" id="authSubmit">Sign in <span>→</span></button><p class="auth-error" id="authError" role="alert"></p></form>`);
     let mode="login";
     const setMode=(next)=>{mode=next;const registering=mode==="register";$("#authNameField").hidden=!registering;$("#authRoleField").hidden=!registering;$("#authForm [name=password]").autocomplete=registering?"new-password":"current-password";$("#authForm [name=password]").minLength=registering?12:1;$("#authForm [name=password]").required=true;$("#authSubmit").innerHTML=`${registering?"Create account":"Sign in"} <span>→</span>`;$("#modalTitle").textContent=registering?"Create your account":"Welcome back";$("#loginTab").classList.toggle("active",!registering);$("#registerTab").classList.toggle("active",registering);$("#forgotPassword").hidden=registering;$("#resendVerification").hidden=registering;$("#authHint").textContent=registering?"We’ll email a verification link before you can sign in.":"Use a verified email address. Sample profiles have no sign-in credentials.";};
     $("#loginTab").onclick=()=>setMode("login"); $("#registerTab").onclick=()=>setMode("register");
+    if(initialMode==="register") setMode("register");
     $("#forgotPassword").onclick=async()=>{const email=$("#authForm [name=email]").value.trim();if(!email){$("#authError").textContent="Enter your email address first.";return;}try{const result=await api("/api/auth/password-reset/request",{method:"POST",body:JSON.stringify({email})});$("#authError").textContent=result.message;}catch(error){$("#authError").textContent=error.message;}};
     $("#resendVerification").onclick=async()=>{const email=$("#authForm [name=email]").value.trim();if(!email){$("#authError").textContent="Enter your email address first.";return;}try{const result=await api("/api/auth/resend-verification",{method:"POST",body:JSON.stringify({email})});$("#authError").textContent=result.message;}catch(error){$("#authError").textContent=error.message;}};
     $("#authForm").onsubmit=async(e)=>{e.preventDefault();const form=e.currentTarget;const values=new FormData(form);const button=$("#authSubmit");button.disabled=true;button.textContent="Please wait…";$("#authError").textContent="";try{const result=await api(`/api/auth/${mode}`,{method:"POST",body:JSON.stringify({name:values.get("name"),email:values.get("email"),password:values.get("password"),role:values.get("role")||chosenRole})});if(mode==="register"){setMode("login");$("#authForm [name=email]").value=values.get("email");$("#authError").textContent=result.message;button.disabled=false;return;}sessionUser=result.user;csrfToken=result.csrfToken;await refreshData();hideModal();toast(`Signed in as ${sessionUser.name}`);if(pendingInquiry){const pending=pendingInquiry;pendingInquiry=null;openDetails(pending.listingId);$("#inquiryMessage").value=pending.message;$("#inquiryForm").requestSubmit();}else if(sessionUser.role==="owner")ownerDashboard();}catch(error){$("#authError").textContent=error.message;button.disabled=false;button.innerHTML=`${mode==="register"?"Create account":"Sign in"} <span>→</span>`;}};
@@ -165,6 +166,7 @@
   }
   function handleAuthLink() {
     const url=new URL(window.location.href);
+    if(url.searchParams.get("join")==="owner") { url.searchParams.delete("join"); history.replaceState({},"",url); showAuth("owner","register"); }
     const fragment=new URLSearchParams(url.hash.slice(1));
     const verify=fragment.get("verify")||url.searchParams.get("verify");
     const reset=fragment.get("reset")||url.searchParams.get("reset");
@@ -190,7 +192,11 @@
   grid.innerHTML = `<div class="loading-state">Finding places in Nagpur<span> · </span>loading inventory…</div>`;
   handleAuthLink();
   refreshData().then(()=>render()).catch((error)=>{
-    grid.innerHTML=`<div class="server-error"><h3>RoomRoute couldn’t connect to its service</h3><p>${error.message}</p><p>Start the local app with <code>python server.py</code> or Docker Compose, then refresh this page.</p></div>`;
+    const box=document.createElement("div"); box.className="server-error";
+    const title=document.createElement("h3"); title.textContent="RoomRoute couldn’t connect to its service";
+    const detail=document.createElement("p"); detail.textContent=error.message;
+    const help=document.createElement("p"); help.append("Start the local app with "); const command=document.createElement("code"); command.textContent="python server.py"; help.append(command," or Docker Compose, then refresh this page.");
+    box.append(title,detail,help); grid.replaceChildren(box);
     $("#resultCount").textContent="—"; $("#loadMore").hidden=true;
   });
 })();

@@ -9,13 +9,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20261024b" />
+    <link rel="stylesheet" href="styles.css?v=20261027a" />
   </head>
   <body>
     <header class="topbar">
       <a class="brand" href="#" aria-label="RoomRoute home"><span class="brand-icon">R</span><span>roomroute<span class="brand-dot">.</span></span></a>
-      <nav class="main-nav" aria-label="Main navigation"><a class="nav-link active" href="#homes">Find a place</a><a class="nav-link" href="#how">How it works</a></nav>
-      <div class="top-actions"><button class="saved-link" id="savedToggle"><span>♡</span> Saved <b id="savedCount">0</b></button><button class="owner-button" id="ownerMode"><span class="owner-plus">＋</span> List your place</button><button class="avatar" id="avatarButton" aria-label="Sign in or create an account">A</button></div>
+      <nav class="main-nav" aria-label="Main navigation"><a class="nav-link active" href="/">Find a place</a><a class="nav-link" href="/how-it-works.html">How it works</a><a class="nav-link" href="/safety.html">Safety</a></nav>
+      <div class="top-actions"><a class="saved-link" href="/saved.html"><span>♡</span> Saved <b id="savedCount">0</b></a><a class="owner-button" href="/owners.html"><span class="owner-plus">＋</span> List your place</a><button class="avatar" id="avatarButton" aria-label="Sign in or create an account">A</button></div>
       <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
     </header>
     <main>
@@ -30,12 +30,12 @@
         <div class="active-filters" id="activeFilters"></div><div class="listing-grid" id="listingGrid" aria-live="polite"></div><div class="empty-state" id="emptyState" hidden><span>⌂</span><h3>No places match just yet</h3><p>Try widening your budget or clearing a filter.</p><button class="text-button" id="emptyClear">Clear all filters →</button></div><button class="load-more" id="loadMore">Explore more places <span>↓</span></button>
       </section>
       <section class="how-section" id="how"><div><div class="eyebrow small-eyebrow">A LITTLE LESS RUNNING AROUND</div><h2>Find your fit,<br /><em>before the visit.</em></h2></div><div class="how-steps"><article><span>01</span><h3>Make it yours</h3><p>Set your budget, area, and the everyday details that matter.</p></article><article><span>02</span><h3>See the whole picture</h3><p>Compare photos, rent, deposit, utilities, and what’s included.</p></article><article><span>03</span><h3>Ask, then go see</h3><p>Shortlist your favorites and contact owners to plan a visit.</p></article></div></section>
-      <section class="owner-cta"><div><div class="eyebrow small-eyebrow">OWNER PILOT · LOKMANYA NAGAR & HINGNA</div><h2>Good tenants start<br />with good details.</h2><p>Authorized owners can submit a listing for manual review.</p></div><button class="owner-button large" id="ownerCta">List your place <span>→</span></button><div class="cta-spark">✳</div></section>
+      <section class="owner-cta"><div><div class="eyebrow small-eyebrow">OWNER PILOT · LOKMANYA NAGAR & HINGNA</div><h2>Good tenants start<br />with good details.</h2><p>Authorized owners can submit a listing for manual review.</p></div><a class="owner-button large" href="/owners.html">List your place <span>→</span></a><div class="cta-spark">✳</div></section>
     </main>
-    <footer><a class="brand" href="#"><span class="brand-icon">R</span><span>roomroute<span class="brand-dot">.</span></span></a><span>Find your place in Nagpur. Move at your pace.</span><span class="demo-disclaimer" id="demoDisclaimer">Listing details are supplied by owners. Confirm details and availability before paying.</span></footer>
+    <footer><a class="brand" href="/"><span class="brand-icon">R</span><span>roomroute<span class="brand-dot">.</span></span></a><span>Find your place in Nagpur. Move at your pace.</span><span class="demo-disclaimer" id="demoDisclaimer">Listing details are supplied by owners. Confirm details and availability before paying.</span><nav aria-label="Footer"><a href="/how-it-works.html">How it works</a><a href="/safety.html">Safety</a><a href="/owners.html">For owners</a></nav></footer>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <div class="modal-backdrop" id="modalBackdrop" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button class="modal-close" id="modalClose" aria-label="Close">×</button><div id="modalContent"></div></section></div>
-    <script src="app.js?v=20261024b"></script>
+    <script src="app.js?v=20261027a"></script>
   </body>
 </html>
 

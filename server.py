@@ -41,12 +41,12 @@ SEEDS = [
     ("A bright room, steps from campus", "Private room", 8500, 17000, "Semi furnished", 0, 0, "photo-1505693416388-ac5ce068fe85"),
     ("Easy living in a roomy 2 BHK", "2 BHK flat", 22000, 44000, "Fully furnished", 1, 1, "photo-1600210492486-724fe5c67fb0"),
     ("Shared space with a friendly vibe", "Shared room", 6000, 12000, "Fully furnished", 1, 0, "photo-1600607687939-ce8a6c25118c"),
-    ("A little home near the green", "1 BHK flat", 15500, 30000, "Semi furnished", 1, 1, "photo-1600566753086-00f18fb6b3ea"),
+    ("Student PG with meals and Wi-Fi", "PG accommodation", 8500, 12000, "Semi furnished", 1, 1, "photo-1600566753086-00f18fb6b3ea"),
     ("Quiet private room with a balcony", "Private room", 12000, 24000, "Fully furnished", 0, 1, "photo-1600607687920-4e2a09cf159d"),
     ("Your own corner in a shared flat", "Private room", 9000, 18000, "Semi furnished", 1, 0, "photo-1600566753190-17f0baa2a6c3"),
     ("Open, airy 2 BHK near the main road", "2 BHK flat", 25000, 50000, "Fully furnished", 1, 1, "photo-1616486338812-3dadae4b4ace"),
     ("Comfortable shared room, all set up", "Shared room", 5500, 11000, "Fully furnished", 0, 0, "photo-1600585154340-be6161a56a0c"),
-    ("A neat 1 BHK for your next chapter", "1 BHK flat", 14500, 29000, "Unfurnished", 1, 1, "photo-1600607687644-c7171b42498f"),
+    ("Looking for a flatmate near campus", "Roommate wanted", 9000, 12000, "Unfurnished", 1, 1, "photo-1600607687644-c7171b42498f"),
 ]
 PASSWORD_HASHER = PasswordHasher()
 DUMMY_PASSWORD_HASH = PASSWORD_HASHER.hash(secrets.token_urlsafe(32))
@@ -198,7 +198,7 @@ def init_db():
                 "CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE TABLE IF NOT EXISTS owners(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL UNIQUE,role TEXT NOT NULL DEFAULT 'owner',is_sample INTEGER NOT NULL DEFAULT 0)",
                 "CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL UNIQUE,role TEXT NOT NULL,occupation TEXT NOT NULL,budget INTEGER NOT NULL,is_sample INTEGER NOT NULL DEFAULT 0)",
-                "CREATE TABLE IF NOT EXISTS listings(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES owners(id),title TEXT NOT NULL,type TEXT NOT NULL,rent INTEGER NOT NULL,deposit INTEGER NOT NULL,area TEXT NOT NULL,city TEXT NOT NULL DEFAULT 'Nagpur',furnishing TEXT NOT NULL,parking INTEGER NOT NULL,electricity_included INTEGER NOT NULL,available_from TEXT NOT NULL,photo TEXT NOT NULL,summary TEXT NOT NULL,amenities TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',is_sample INTEGER NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),moderation_note TEXT,rent_basis TEXT NOT NULL DEFAULT 'whole_property',owner_consent_at TIMESTAMPTZ,maintenance_mode TEXT NOT NULL DEFAULT 'unknown',maintenance_amount INTEGER NOT NULL DEFAULT 0)",
+                "CREATE TABLE IF NOT EXISTS listings(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES owners(id),title TEXT NOT NULL,type TEXT NOT NULL,rent INTEGER NOT NULL,deposit INTEGER NOT NULL,area TEXT NOT NULL,city TEXT NOT NULL DEFAULT 'Nagpur',furnishing TEXT NOT NULL,parking INTEGER NOT NULL,electricity_included INTEGER NOT NULL,available_from TEXT NOT NULL,photo TEXT NOT NULL,summary TEXT NOT NULL,amenities TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',is_sample INTEGER NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),moderation_note TEXT,rent_basis TEXT NOT NULL DEFAULT 'whole_property',owner_consent_at TIMESTAMPTZ,maintenance_mode TEXT NOT NULL DEFAULT 'unknown',maintenance_amount INTEGER NOT NULL DEFAULT 0,gender_preference TEXT NOT NULL DEFAULT 'any')",
                 "CREATE TABLE IF NOT EXISTS inquiries(id BIGSERIAL PRIMARY KEY,listing_id TEXT NOT NULL REFERENCES listings(id),student_id TEXT NOT NULL REFERENCES users(id),message TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'new',created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,name TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('owner','student','employee','moderator')),password_hash TEXT NOT NULL,is_verified INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,csrf_token TEXT NOT NULL,expires_at TIMESTAMPTZ NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -207,6 +207,8 @@ def init_db():
                 "CREATE TABLE IF NOT EXISTS auth_tokens(token_hash TEXT PRIMARY KEY,account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,purpose TEXT NOT NULL,expires_at TIMESTAMPTZ NOT NULL,used_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE TABLE IF NOT EXISTS email_outbox(id BIGSERIAL PRIMARY KEY,recipient TEXT NOT NULL,subject TEXT NOT NULL,body TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next_attempt TIMESTAMPTZ NOT NULL DEFAULT now(),sent_at TIMESTAMPTZ,last_error TEXT,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE TABLE IF NOT EXISTS listing_reports(id BIGSERIAL PRIMARY KEY,listing_id TEXT NOT NULL REFERENCES listings(id),reporter_id TEXT NOT NULL REFERENCES accounts(id),reason TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'open',created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+                "CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY,listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,owner_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,renter_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(listing_id,renter_id))",
+                "CREATE TABLE IF NOT EXISTS messages(id BIGSERIAL PRIMARY KEY,conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,sender_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,body TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),read_at TIMESTAMPTZ)",
                 "CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at)",
                 "CREATE INDEX IF NOT EXISTS idx_auth_tokens_active ON auth_tokens(account_id,purpose,expires_at)",
                 "CREATE INDEX IF NOT EXISTS idx_outbox_pending ON email_outbox(sent_at,next_attempt)",
@@ -219,6 +221,9 @@ def init_db():
                 "CREATE INDEX IF NOT EXISTS idx_listings_public_furnishing ON listings(status,furnishing)",
                 "CREATE INDEX IF NOT EXISTS idx_inquiries_listing_order ON inquiries(listing_id,id DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_inquiries_student ON inquiries(student_id)",
+                "CREATE INDEX IF NOT EXISTS idx_conversations_owner_recent ON conversations(owner_id,last_message_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_conversations_renter_recent ON conversations(renter_id,last_message_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_messages_thread_order ON messages(conversation_id,created_at,id)",
             ]
             for statement in statements: db.execute(statement)
             # Existing installations receive additive-only schema upgrades.
@@ -227,6 +232,7 @@ def init_db():
             db.execute("ALTER TABLE listings ADD COLUMN IF NOT EXISTS owner_consent_at TIMESTAMPTZ")
             db.execute("ALTER TABLE listings ADD COLUMN IF NOT EXISTS maintenance_mode TEXT NOT NULL DEFAULT 'unknown'")
             db.execute("ALTER TABLE listings ADD COLUMN IF NOT EXISTS maintenance_amount INTEGER NOT NULL DEFAULT 0")
+            db.execute("ALTER TABLE listings ADD COLUMN IF NOT EXISTS gender_preference TEXT NOT NULL DEFAULT 'any'")
             db.execute("ALTER TABLE listings ALTER COLUMN status SET DEFAULT 'pending'")
             db.execute("INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT(version) DO NOTHING")
             if not db.execute("SELECT 1 FROM schema_migrations WHERE version=2").fetchone():
@@ -238,12 +244,18 @@ def init_db():
                 for index, sample in enumerate(samples):
                     db.execute("UPDATE listings SET area=? WHERE id=?", (PILOT_AREAS[index % len(PILOT_AREAS)], sample[0]))
                 db.execute("INSERT INTO schema_migrations(version) VALUES(3) ON CONFLICT(version) DO NOTHING")
+            if not db.execute("SELECT 1 FROM schema_migrations WHERE version=4").fetchone():
+                db.execute("UPDATE listings SET type='PG accommodation',title='Student PG with meals and Wi-Fi',rent_basis='per_person' WHERE id='RR-005' AND is_sample=1")
+                db.execute("UPDATE listings SET type='Roommate wanted',title='Looking for a flatmate near campus',rent_basis='per_person' WHERE id='RR-010' AND is_sample=1")
+                db.execute("UPDATE listings SET gender_preference='women' WHERE id='RR-001' AND is_sample=1")
+                db.execute("UPDATE listings SET gender_preference='men' WHERE id='RR-003' AND is_sample=1")
+                db.execute("INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT(version) DO NOTHING")
         return
     with db_session() as db:
         db.executescript("""
         CREATE TABLE IF NOT EXISTS owners(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, role TEXT NOT NULL DEFAULT 'owner', is_sample INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, role TEXT NOT NULL, occupation TEXT NOT NULL, budget INTEGER NOT NULL, is_sample INTEGER NOT NULL DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS listings(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id), title TEXT NOT NULL, type TEXT NOT NULL, rent INTEGER NOT NULL, deposit INTEGER NOT NULL, area TEXT NOT NULL, city TEXT NOT NULL DEFAULT 'Nagpur', furnishing TEXT NOT NULL, parking INTEGER NOT NULL, electricity_included INTEGER NOT NULL, available_from TEXT NOT NULL, photo TEXT NOT NULL, summary TEXT NOT NULL, amenities TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', is_sample INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, moderation_note TEXT, rent_basis TEXT NOT NULL DEFAULT 'whole_property', owner_consent_at TEXT, maintenance_mode TEXT NOT NULL DEFAULT 'unknown', maintenance_amount INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS listings(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id), title TEXT NOT NULL, type TEXT NOT NULL, rent INTEGER NOT NULL, deposit INTEGER NOT NULL, area TEXT NOT NULL, city TEXT NOT NULL DEFAULT 'Nagpur', furnishing TEXT NOT NULL, parking INTEGER NOT NULL, electricity_included INTEGER NOT NULL, available_from TEXT NOT NULL, photo TEXT NOT NULL, summary TEXT NOT NULL, amenities TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', is_sample INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, moderation_note TEXT, rent_basis TEXT NOT NULL DEFAULT 'whole_property', owner_consent_at TEXT, maintenance_mode TEXT NOT NULL DEFAULT 'unknown', maintenance_amount INTEGER NOT NULL DEFAULT 0, gender_preference TEXT NOT NULL DEFAULT 'any');
         CREATE TABLE IF NOT EXISTS inquiries(id INTEGER PRIMARY KEY AUTOINCREMENT, listing_id TEXT NOT NULL REFERENCES listings(id), student_id TEXT NOT NULL REFERENCES users(id), message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','student','employee','moderator')), password_hash TEXT NOT NULL, is_verified INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, csrf_token TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
@@ -252,6 +264,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS auth_tokens(token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, purpose TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS email_outbox(id INTEGER PRIMARY KEY AUTOINCREMENT, recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_attempt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, sent_at TEXT, last_error TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS listing_reports(id INTEGER PRIMARY KEY AUTOINCREMENT, listing_id TEXT NOT NULL REFERENCES listings(id), reporter_id TEXT NOT NULL REFERENCES accounts(id), reason TEXT NOT NULL, details TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY, listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE, owner_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, renter_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_message_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(listing_id,renter_id));
+        CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, sender_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, body TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, read_at TEXT);
         CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
         CREATE INDEX IF NOT EXISTS idx_auth_attempts_lookup ON auth_attempts(ip_address,email,failed_at);
@@ -263,6 +277,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_listings_public_furnishing ON listings(status,furnishing);
         CREATE INDEX IF NOT EXISTS idx_inquiries_listing_order ON inquiries(listing_id,id DESC);
         CREATE INDEX IF NOT EXISTS idx_inquiries_student ON inquiries(student_id);
+        CREATE INDEX IF NOT EXISTS idx_conversations_owner_recent ON conversations(owner_id,last_message_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_conversations_renter_recent ON conversations(renter_id,last_message_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_messages_thread_order ON messages(conversation_id,created_at,id);
         """)
         # Safe migrations for databases created by the earlier local preview.
         for table in ("owners", "users", "listings"):
@@ -281,6 +298,8 @@ def init_db():
             db.execute("ALTER TABLE listings ADD COLUMN maintenance_mode TEXT NOT NULL DEFAULT 'unknown'")
         if "maintenance_amount" not in columns:
             db.execute("ALTER TABLE listings ADD COLUMN maintenance_amount INTEGER NOT NULL DEFAULT 0")
+        if "gender_preference" not in columns:
+            db.execute("ALTER TABLE listings ADD COLUMN gender_preference TEXT NOT NULL DEFAULT 'any'")
         db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES(1)")
         if not db.execute("SELECT 1 FROM schema_migrations WHERE version=2").fetchone():
             db.execute("UPDATE listings SET status='pending' WHERE is_sample=0 AND status='active'")
@@ -291,6 +310,12 @@ def init_db():
             for index, sample in enumerate(samples):
                 db.execute("UPDATE listings SET area=? WHERE id=?", (PILOT_AREAS[index % len(PILOT_AREAS)], sample[0]))
             db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES(3)")
+        if not db.execute("SELECT 1 FROM schema_migrations WHERE version=4").fetchone():
+            db.execute("UPDATE listings SET type='PG accommodation',title='Student PG with meals and Wi-Fi',rent_basis='per_person' WHERE id='RR-005' AND is_sample=1")
+            db.execute("UPDATE listings SET type='Roommate wanted',title='Looking for a flatmate near campus',rent_basis='per_person' WHERE id='RR-010' AND is_sample=1")
+            db.execute("UPDATE listings SET gender_preference='women' WHERE id='RR-001' AND is_sample=1")
+            db.execute("UPDATE listings SET gender_preference='men' WHERE id='RR-003' AND is_sample=1")
+            db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES(4)")
 
 
 def seed_sample_data():
@@ -307,7 +332,7 @@ def seed_sample_data():
             db.execute("INSERT INTO owners(id,name,email,is_sample) VALUES(?,?,?,1)", (oid, name, f"owner{i+1:03}@example.com"))
             title, kind, rent, deposit, furnish, parking, power, photo = SEEDS[i % len(SEEDS)]
             n = i // len(SEEDS)
-            db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample,rent_basis) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)", (f"RR-{i+1:03}", oid, title if n == 0 else f"{title} · {n+1}", kind, rent+n*500, deposit+n*1000, AREAS[i % len(AREAS)], furnish, parking, power, f"2026-11-{i%20+1:02}", f"https://images.unsplash.com/{photo}?auto=format&fit=crop&w=1000&q=80", "A comfortable Nagpur home with useful everyday details and clear costs to help you compare options.", json.dumps([["Wi-Fi", "Study desk", "Washing machine"], ["Balcony", "Water purifier", "Wi-Fi"], ["Kitchen", "Wardrobe", "Lift"], ["Wi-Fi", "Study area", "Power backup"], ["Parking", "Balcony", "Kitchen"]][i%5]), "per_person" if kind == "Shared room" else "whole_property"))
+            db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample,rent_basis,gender_preference) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)", (f"RR-{i+1:03}", oid, title if n == 0 else f"{title} · {n+1}", kind, rent+n*500, deposit+n*1000, AREAS[i % len(AREAS)], furnish, parking, power, f"2026-11-{i%20+1:02}", f"https://images.unsplash.com/{photo}?auto=format&fit=crop&w=1000&q=80", "A comfortable Nagpur home with useful everyday details and clear costs to help you compare options.", json.dumps([["Wi-Fi", "Study desk", "Washing machine"], ["Balcony", "Water purifier", "Wi-Fi"], ["Kitchen", "Wardrobe", "Lift"], ["Wi-Fi", "Study area", "Power backup"], ["Parking", "Balcony", "Kitchen"]][i%5]), "per_person" if kind in {"Shared room","Roommate wanted","PG accommodation"} else "whole_property", "women" if i==0 else "men" if i==2 else "any"))
         first = ["Aarohi", "Vivaan", "Sana", "Arnav", "Ishita", "Rehan", "Myra", "Ayaan", "Kritika", "Kabir", "Anika", "Rohan", "Zara", "Advik", "Meher", "Ishan", "Nitya", "Shaurya", "Saira", "Neil"]
         last = ["Kadam", "Pawar", "Sharma", "Khan", "Bose", "Rao", "Joshi", "Desai", "Seth", "Kulkarni"]
         for i in range(200):
@@ -343,6 +368,7 @@ def listing_json(row):
     row.pop("owner_consent_at", None)
     row["maintenanceMode"] = row.pop("maintenance_mode", "unknown")
     row["maintenanceAmount"] = row.pop("maintenance_amount", 0)
+    row["genderPreference"] = row.pop("gender_preference", "any")
     row["estimatedMonthlyCost"] = row["rent"] + (row["maintenanceAmount"] if row["maintenanceMode"] == "extra" else 0) if row["maintenanceMode"] != "unknown" else None
     row["ownerId"] = row.pop("owner_id")
     row["availableFrom"] = row.pop("available_from")
@@ -546,6 +572,23 @@ class Handler(SimpleHTTPRequestHandler):
                     if value:
                         clauses.append(f"{column}=?")
                         params.append(value[:100])
+                category=one("category")
+                if category == "rooms":
+                    clauses.append("type IN ('Private room','Shared room')")
+                elif category == "roommates":
+                    clauses.append("type IN ('Shared room','Roommate wanted')")
+                elif category == "pg":
+                    clauses.append("type='PG accommodation'")
+                elif category not in {"", "all", "flats"}:
+                    return self.send_json({"error":"Choose a valid home category."},400)
+                elif category == "flats":
+                    clauses.append("type IN ('1 BHK flat','2 BHK flat')")
+                gender=one("gender")
+                if gender in {"men", "women"}:
+                    clauses.append("gender_preference IN (?, 'any')")
+                    params.append(gender)
+                elif gender not in {"", "all"}:
+                    return self.send_json({"error":"Choose a valid household preference."},400)
                 budget=one("budget")
                 if budget:
                     try: budget_value=max(0,min(10_000_000,int(budget)))
@@ -586,6 +629,26 @@ class Handler(SimpleHTTPRequestHandler):
                     return
                 self.send_json(rows(db, "SELECT i.id,i.listing_id,i.student_id,i.message,i.status,i.created_at,l.title listing_title,u.name student_name,u.role student_role FROM inquiries i JOIN listings l ON l.id=i.listing_id JOIN users u ON u.id=i.student_id WHERE l.owner_id=? ORDER BY i.id DESC", (current["id"],)))
                 return
+            if path == "/api/conversations":
+                current=self.require_session(db)
+                if not current: return
+                if current["role"] == "owner":
+                    scope="c.owner_id=?"; args=(current["id"],); peer="renter"
+                elif current["role"] in {"student","employee"}:
+                    scope="c.renter_id=?"; args=(current["id"],); peer="owner"
+                else:
+                    self.send_json([]); return
+                sql=f"SELECT c.id,c.listing_id,c.last_message_at,l.title listing_title, a.id peer_id,a.name peer_name, (SELECT m.body FROM messages m WHERE m.conversation_id=c.id ORDER BY m.created_at DESC,m.id DESC LIMIT 1) last_message, (SELECT COUNT(*) FROM messages unread WHERE unread.conversation_id=c.id AND unread.sender_id<>? AND unread.read_at IS NULL) unread_count FROM conversations c JOIN listings l ON l.id=c.listing_id JOIN accounts a ON a.id=c.{peer}_id WHERE {scope} ORDER BY c.last_message_at DESC LIMIT 100"
+                self.send_json(rows(db,sql,(current["id"],*args))); return
+            if path.startswith("/api/conversations/") and path.endswith("/messages"):
+                current=self.require_session(db)
+                if not current: return
+                conversation_id=path[len("/api/conversations/"):-len("/messages")].strip("/")
+                conversation=db.execute("SELECT id FROM conversations WHERE id=? AND (owner_id=? OR renter_id=?)",(conversation_id,current["id"],current["id"])).fetchone()
+                if not conversation:
+                    self.send_json({"error":"Conversation not found."},404); return
+                db.execute("UPDATE messages SET read_at=? WHERE conversation_id=? AND sender_id<>? AND read_at IS NULL",(database_now(),conversation_id,current["id"]))
+                self.send_json(rows(db,"SELECT id,sender_id,body,created_at,read_at FROM messages WHERE conversation_id=? ORDER BY created_at,id LIMIT 500",(conversation_id,))); return
             if path == "/api/owner/listings":
                 current=self.require_session(db,role="owner")
                 if not current: return
@@ -599,7 +662,8 @@ class Handler(SimpleHTTPRequestHandler):
                 user_listings = rows(db, "SELECT id,title,type,rent,deposit,rent_basis,owner_consent_at,maintenance_mode,maintenance_amount,area,available_from,status,created_at FROM listings WHERE owner_id=?", (current["id"],))
                 messages = rows(db, "SELECT i.id,i.listing_id,i.message,i.status,i.created_at,l.title FROM inquiries i JOIN listings l ON l.id=i.listing_id WHERE i.student_id=?", (current["id"],))
                 reports = rows(db,"SELECT listing_id,reason,details,status,created_at FROM listing_reports WHERE reporter_id=?",(current["id"],))
-                self.send_json({"account": dict(profile) if profile else {}, "renterProfile":dict(renter_profile) if renter_profile else None, "listings": user_listings, "inquiries": messages, "reports":reports})
+                conversations=rows(db,"SELECT c.id,c.listing_id,c.created_at,c.last_message_at,m.sender_id,m.body,m.created_at message_created_at FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.owner_id=? OR c.renter_id=? ORDER BY c.last_message_at,m.created_at",(current["id"],current["id"]))
+                self.send_json({"account": dict(profile) if profile else {}, "renterProfile":dict(renter_profile) if renter_profile else None, "listings": user_listings, "inquiries": messages, "conversations":conversations, "reports":reports})
                 return
             if path in {"/api/moderation/listings", "/api/moderation/reports"}:
                 current = self.require_session(db, role="moderator")
@@ -781,12 +845,33 @@ class Handler(SimpleHTTPRequestHandler):
                         return self.send_json({"error": "Sample listings are fictional and cannot receive inquiries."}, 400)
                     cursor = db.execute("INSERT INTO inquiries(listing_id,student_id,message) VALUES(?,?,?) RETURNING id", (listing_id, student_id, message))
                     inquiry_id = cursor.fetchone()[0]
-                    owner = db.execute("SELECT o.email,o.name,l.title FROM listings l JOIN owners o ON o.id=l.owner_id WHERE l.id=?", (listing_id,)).fetchone()
+                    owner = db.execute("SELECT o.email,o.name,l.title,l.owner_id FROM listings l JOIN owners o ON o.id=l.owner_id WHERE l.id=?", (listing_id,)).fetchone()
                     renter = db.execute("SELECT name FROM accounts WHERE id=?", (student_id,)).fetchone()
+                    conversation_id=f"CON-{secrets.token_hex(12)}"
+                    db.execute("INSERT INTO conversations(id,listing_id,owner_id,renter_id) VALUES(?,?,?,?) ON CONFLICT(listing_id,renter_id) DO NOTHING",(conversation_id,listing_id,owner["owner_id"],student_id))
+                    existing=db.execute("SELECT id FROM conversations WHERE listing_id=? AND renter_id=?",(listing_id,student_id)).fetchone()
+                    conversation_id=existing["id"]
+                    db.execute("INSERT INTO messages(conversation_id,sender_id,body) VALUES(?,?,?)",(conversation_id,student_id,message))
+                    db.execute("UPDATE conversations SET last_message_at=? WHERE id=?",(database_now(),conversation_id))
                     if owner:
                         base_url=os.environ.get("ROOMROUTE_PUBLIC_URL","http://127.0.0.1:8765").rstrip("/")
-                        queue_email(db,owner["email"],"New RoomRoute rental inquiry",f"Hello {owner['name']},\n\n{renter['name'] if renter else 'A renter'} sent an inquiry about {owner['title']}. Sign in to your RoomRoute account to view and reply.\n\n{base_url}/")
-                    return self.send_json({"id": inquiry_id, "message": "Inquiry received. The owner has been notified by email."}, 201)
+                        queue_email(db,owner["email"],"New RoomRoute rental inquiry",f"Hello {owner['name']},\n\n{renter['name'] if renter else 'A renter'} sent an inquiry about {owner['title']}. Sign in to RoomRoute to reply securely.\n\n{base_url}/")
+                    return self.send_json({"id": inquiry_id,"conversationId":conversation_id,"message": "Inquiry received. You can continue the conversation in your secure RoomRoute inbox."}, 201)
+                if path.startswith("/api/conversations/") and path.endswith("/messages"):
+                    if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
+                    current=self.require_session(db,csrf=True)
+                    if not current: return
+                    if current["role"] not in {"owner","student","employee"}:
+                        return self.send_json({"error":"This action is not available for your account."},403)
+                    if not self.allow_write(db,"conversation_message",60,3600): return self.send_json({"error":"Too many messages. Try again later."},429)
+                    conversation_id=path[len("/api/conversations/"):-len("/messages")].strip("/")
+                    conversation=db.execute("SELECT id FROM conversations WHERE id=? AND (owner_id=? OR renter_id=?)",(conversation_id,current["id"],current["id"])).fetchone()
+                    if not conversation: return self.send_json({"error":"Conversation not found."},404)
+                    body=str(payload.get("message","")).strip()
+                    if not 1<=len(body)<=2000: return self.send_json({"error":"Message must be between 1 and 2,000 characters."},400)
+                    db.execute("INSERT INTO messages(conversation_id,sender_id,body) VALUES(?,?,?)",(conversation_id,current["id"],body))
+                    db.execute("UPDATE conversations SET last_message_at=? WHERE id=?",(database_now(),conversation_id))
+                    return self.send_json({"message":"Message sent."},201)
                 if self.path == "/api/listings":
                     if not self.check_origin():
                         return self.send_json({"error": "Request origin could not be verified."}, 403)
@@ -815,11 +900,12 @@ class Handler(SimpleHTTPRequestHandler):
                     maintenance_amount = payload.get("maintenanceAmount")
                     if type(maintenance_amount) is not int or maintenance_amount < 0 or maintenance_amount > 1000000 or maintenance_mode not in {"included", "extra", "none"} or (maintenance_mode == "extra" and maintenance_amount < 1) or (maintenance_mode != "extra" and maintenance_amount != 0):
                         return self.send_json({"error": "Choose how maintenance is charged and enter an amount only when it is billed separately."}, 400)
-                    if not title or len(title) > 100 or kind not in {"Private room", "Shared room", "1 BHK flat", "2 BHK flat"} or area not in AREAS or furnishing not in {"Fully furnished", "Semi furnished", "Unfurnished"} or rent_basis not in {"per_person", "whole_property"} or rent < 1 or rent > 1000000 or deposit < 0 or deposit > 10000000 or not valid_date or len(summary) > 500 or type(payload.get("parking")) is not bool or type(payload.get("electricityIncluded")) is not bool or payload.get("ownerAuthorized") is not True:
+                    gender_preference=str(payload.get("genderPreference","any"))
+                    if not title or len(title) > 100 or kind not in {"Private room", "Shared room", "1 BHK flat", "2 BHK flat", "PG accommodation", "Roommate wanted"} or area not in AREAS or furnishing not in {"Fully furnished", "Semi furnished", "Unfurnished"} or rent_basis not in {"per_person", "whole_property"} or gender_preference not in {"any","men","women"} or rent < 1 or rent > 1000000 or deposit < 0 or deposit > 10000000 or not valid_date or len(summary) > 500 or type(payload.get("parking")) is not bool or type(payload.get("electricityIncluded")) is not bool or payload.get("ownerAuthorized") is not True:
                         return self.send_json({"error": "Enter valid listing details, choose how rent is charged, and confirm you are authorized to publish this place."}, 400)
                     new_id = f"RR-{secrets.token_hex(12)}"
                     consented_at = datetime.now(timezone.utc).isoformat()
-                    db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample,status,rent_basis,owner_consent_at,maintenance_mode,maintenance_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'pending',?,?,?,?)", (new_id, current["id"], title, kind, rent, deposit, area, furnishing, int(payload["parking"]), int(payload["electricityIncluded"]), available_from, "", summary, json.dumps([]), rent_basis, consented_at, maintenance_mode, maintenance_amount))
+                    db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample,status,rent_basis,owner_consent_at,maintenance_mode,maintenance_amount,gender_preference) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'pending',?,?,?,?,?)", (new_id, current["id"], title, kind, rent, deposit, area, furnishing, int(payload["parking"]), int(payload["electricityIncluded"]), available_from, "", summary, json.dumps([]), rent_basis, consented_at, maintenance_mode, maintenance_amount,gender_preference))
                     return self.send_json({"id": new_id, "status":"pending", "message": "Listing submitted for review. It will appear publicly after approval."}, 201)
                 if path.startswith("/api/owner/listings/") and path.endswith("/availability"):
                     if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)

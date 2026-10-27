@@ -56,6 +56,8 @@ class PreviewDataSafetyTests(unittest.TestCase):
         with server.db_session() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM listings WHERE is_sample=1").fetchone()[0], 50)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM users WHERE is_sample=1").fetchone()[0], 200)
+            sample_types={row["type"] for row in db.execute("SELECT DISTINCT type FROM listings WHERE is_sample=1").fetchall()}
+            self.assertTrue({"PG accommodation","Roommate wanted"}.issubset(sample_types))
         server.remove_sample_data()
         with server.db_session() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM listings").fetchone()[0], 0)
@@ -265,6 +267,13 @@ class ServiceFlowTests(unittest.TestCase):
         status,filtered=self.call("/api/listings?area=Dharampeth&budget=10000&parking=yes")
         self.assertEqual(status,200)
         self.assertTrue(all(row["area"]=="Dharampeth" and row["rent"]<=10000 and row["parking"] for row in filtered["listings"]))
+        status,rooms=self.call("/api/listings?category=rooms")
+        self.assertEqual(status,200)
+        self.assertTrue(all(row["type"] in {"Private room","Shared room"} for row in rooms["listings"]))
+        status,flats=self.call("/api/listings?category=flats")
+        self.assertEqual(status,200)
+        self.assertTrue(all(row["type"] in {"1 BHK flat","2 BHK flat"} for row in flats["listings"]))
+        self.assertEqual(self.call("/api/listings?category=unknown")[0],400)
 
     def test_login_throttle_runs_before_password_hash(self):
         for _ in range(8):
@@ -273,7 +282,7 @@ class ServiceFlowTests(unittest.TestCase):
 
     def test_verification_listing_approval_inquiry_report_and_privacy(self):
         owner_cookies,owner_csrf,owner=self.create_verified_account("owner@example.test","owner")
-        listing_payload={"title":"Bright room near campus","type":"Private room","area":"Dharampeth","rent":11000,"deposit":22000,"rentBasis":"whole_property","maintenanceMode":"extra","maintenanceAmount":750,"ownerAuthorized":True,"furnishing":"Semi furnished","availableFrom":"2026-11-01","parking":True,"electricityIncluded":False,"summary":"A genuine test listing."}
+        listing_payload={"title":"Bright room near campus","type":"Private room","area":"Dharampeth","rent":11000,"deposit":22000,"rentBasis":"whole_property","maintenanceMode":"extra","maintenanceAmount":750,"genderPreference":"women","ownerAuthorized":True,"furnishing":"Semi furnished","availableFrom":"2026-11-01","parking":True,"electricityIncluded":False,"summary":"A genuine test listing."}
         unauthorized={**listing_payload,"ownerAuthorized":False}
         self.assertEqual(self.call("/api/listings","POST",unauthorized,owner_cookies,owner_csrf)[0],400)
         invalid_cost={**listing_payload,"maintenanceAmount":0}
@@ -298,10 +307,23 @@ class ServiceFlowTests(unittest.TestCase):
         self.assertEqual(public_listings[0]["maintenanceMode"],"extra")
         self.assertEqual(public_listings[0]["maintenanceAmount"],750)
         self.assertEqual(public_listings[0]["estimatedMonthlyCost"],11750)
+        self.assertEqual(public_listings[0]["genderPreference"],"women")
+        self.assertEqual(len(self.call("/api/listings?gender=women")[1]["listings"]),1)
+        self.assertEqual(len(self.call("/api/listings?gender=men")[1]["listings"]),0)
 
         renter_cookies,renter_csrf,renter=self.create_verified_account("renter@example.test","student")
         status,inquiry=self.call("/api/inquiries","POST",{"listingId":created["id"],"message":"Can I visit this room?"},renter_cookies,renter_csrf)
         self.assertEqual(status,201,inquiry)
+        conversation_id=inquiry["conversationId"]
+        self.assertEqual(self.call("/api/conversations",cookies=renter_cookies)[1][0]["id"],conversation_id)
+        owner_conversations=self.call("/api/conversations",cookies=owner_cookies)[1]
+        self.assertEqual(owner_conversations[0]["id"],conversation_id)
+        self.assertEqual(self.call(f"/api/conversations/{conversation_id}/messages",cookies=renter_cookies)[1][0]["body"],"Can I visit this room?")
+        status,sent=self.call(f"/api/conversations/{conversation_id}/messages","POST",{"message":"Yes, we can arrange a visit."},owner_cookies,owner_csrf)
+        self.assertEqual(status,201,sent)
+        renter_messages=self.call(f"/api/conversations/{conversation_id}/messages",cookies=renter_cookies)[1]
+        self.assertEqual(renter_messages[-1]["body"],"Yes, we can arrange a visit.")
+        self.assertEqual(self.call(f"/api/conversations/{conversation_id}/messages",cookies=mod_cookies)[0],404)
         status,owner_inbox=self.call("/api/inquiries",cookies=owner_cookies)
         self.assertEqual(status,200)
         self.assertEqual(owner_inbox[0]["id"],inquiry["id"])

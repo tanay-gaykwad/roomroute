@@ -24,6 +24,7 @@
 - Static content is served from a route allowlist; tests confirm repository files, dotfiles, and the local SQLite database return 404. CORS is not enabled because the web UI and API are same-origin.
 - Content Security Policy now blocks inline scripts/styles, plugins, framing, and non-same-origin API calls; the response also disables unused browser permissions and cross-domain policy files. HSTS is sent only in production.
 - The browser connection-error view inserts server-provided error text as text nodes rather than interpreting it as HTML.
+- Renter-owner conversations and messages are stored in the database with participant-scoped reads/writes, CSRF/origin protection, message length limits, and rate limits. Message bodies render as escaped text; the admin role cannot read private conversation endpoints.
 
 ## Remaining risks and operating requirements
 
@@ -41,5 +42,5 @@
 
 ## Verification performed for this change
 
-Local tests passed on 2026-10-27, including static page headers, denial of dotfiles/source/database paths, bounded request bodies, sample-data safety, cookies, Origin/Host validation, owner listing availability transitions, account flows, moderation, and local throttling. The PostgreSQL/Redis integration test was skipped because `TEST_POSTGRES_URL` was not configured. Python and browser JavaScript syntax checks passed. `pip-audit` reported no known vulnerabilities for the declared Python dependency ranges on this date. A live PostgreSQL/Redis/SMTP deployment, deployment environment variables, external database backups, and a representative load test have not been validated in this workspace.
+Local tests passed on 2026-10-27, including category and household-preference filters, private conversation access, message order, static page headers, denial of dotfiles/source/database paths, bounded request bodies, sample-data safety, cookies, Origin/Host validation, owner listing availability transitions, account flows, moderation, and local throttling. The PostgreSQL/Redis integration test was skipped because `TEST_POSTGRES_URL` was not configured. Python and browser JavaScript syntax checks passed. `pip-audit` reported no known vulnerabilities for the declared Python dependency ranges on this date. A live PostgreSQL/Redis/SMTP deployment, deployment environment variables, external database backups, and a representative load test have not been validated in this workspace.
 

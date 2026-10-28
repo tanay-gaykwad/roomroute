@@ -282,7 +282,7 @@ class ServiceFlowTests(unittest.TestCase):
 
     def test_verification_listing_approval_inquiry_report_and_privacy(self):
         owner_cookies,owner_csrf,owner=self.create_verified_account("owner@example.test","owner")
-        listing_payload={"title":"Bright room near campus","type":"Private room","area":"Dharampeth","rent":11000,"deposit":22000,"rentBasis":"whole_property","maintenanceMode":"extra","maintenanceAmount":750,"genderPreference":"women","ownerAuthorized":True,"furnishing":"Semi furnished","availableFrom":"2026-11-01","parking":True,"electricityIncluded":False,"summary":"A genuine test listing."}
+        listing_payload={"title":"Bright room near campus","type":"Private room","area":"Dharampeth","rent":11000,"deposit":22000,"rentBasis":"whole_property","maintenanceMode":"extra","maintenanceAmount":750,"genderPreference":"women","ownerAuthorized":True,"furnishing":"Semi furnished","availableFrom":"2026-11-01","parking":True,"parkingSpaces":2,"bedrooms":1,"bathrooms":1,"accessible":True,"openToStudents":True,"petFriendly":True,"hasLaundry":True,"hasDishwasher":False,"hasAirConditioning":True,"photos":["https://images.example.test/room.jpg"],"electricityIncluded":False,"summary":"A genuine test listing."}
         unauthorized={**listing_payload,"ownerAuthorized":False}
         self.assertEqual(self.call("/api/listings","POST",unauthorized,owner_cookies,owner_csrf)[0],400)
         invalid_cost={**listing_payload,"maintenanceAmount":0}
@@ -302,7 +302,14 @@ class ServiceFlowTests(unittest.TestCase):
         self.assertEqual(status,200,approved)
         public_listings=self.call("/api/listings")[1]["listings"]
         self.assertEqual(len(public_listings),1)
-        self.assertIsNone(public_listings[0]["photo"])
+        self.assertEqual(public_listings[0]["photo"],"https://images.example.test/room.jpg")
+        self.assertEqual(public_listings[0]["gallery"],["https://images.example.test/room.jpg"])
+        self.assertTrue(public_listings[0]["accessible"])
+        self.assertTrue(public_listings[0]["petFriendly"])
+        self.assertEqual(public_listings[0]["parkingSpaces"],2)
+        self.assertEqual(len(self.call("/api/listings?accessible=yes&pets=yes&students=yes&laundry=yes&ac=yes")[1]["listings"]),1)
+        self.assertEqual(self.call("/api/listings?accessible=banana")[0],400)
+        self.assertEqual(self.call("/api/listings?accessible=yes")[1]["listings"][0]["address"],"Approximate neighborhood only")
         self.assertTrue(public_listings[0]["createdAt"])
         self.assertEqual(public_listings[0]["maintenanceMode"],"extra")
         self.assertEqual(public_listings[0]["maintenanceAmount"],750)
@@ -312,7 +319,7 @@ class ServiceFlowTests(unittest.TestCase):
         self.assertEqual(len(self.call("/api/listings?gender=men")[1]["listings"]),0)
 
         renter_cookies,renter_csrf,renter=self.create_verified_account("renter@example.test","student")
-        status,inquiry=self.call("/api/inquiries","POST",{"listingId":created["id"],"message":"Can I visit this room?"},renter_cookies,renter_csrf)
+        status,inquiry=self.call("/api/inquiries","POST",{"listingId":created["id"],"message":"Can I visit this room?","moveInDate":"2026-12-01"},renter_cookies,renter_csrf)
         self.assertEqual(status,201,inquiry)
         conversation_id=inquiry["conversationId"]
         self.assertEqual(self.call("/api/conversations",cookies=renter_cookies)[1][0]["id"],conversation_id)
@@ -327,6 +334,39 @@ class ServiceFlowTests(unittest.TestCase):
         status,owner_inbox=self.call("/api/inquiries",cookies=owner_cookies)
         self.assertEqual(status,200)
         self.assertEqual(owner_inbox[0]["id"],inquiry["id"])
+        self.assertEqual(owner_inbox[0]["move_in_date"],"2026-12-01")
+        self.assertEqual(self.call(f"/api/inquiries/{inquiry['id']}/status","POST",{"status":"open"},owner_cookies,owner_csrf)[0],200)
+        self.assertEqual(self.call("/api/inquiries",cookies=owner_cookies)[1][0]["status"],"open")
+
+        second={"id":"USR-roommate","name":"Rehan Khan","email":"renter2@example.test"}
+        second_password="a-strong-roommate-password"
+        with server.db_session() as db:
+            db.execute("INSERT INTO users(id,name,email,role,occupation,budget,is_sample) VALUES(?,?,?,?,?,?,0)",(second["id"],second["name"],second["email"],"employee","Designer",12000))
+            db.execute("INSERT INTO accounts(id,email,name,role,password_hash,is_verified) VALUES(?,?,?,?,?,1)",(second["id"],second["email"],second["name"],"employee",server.PASSWORD_HASHER.hash(second_password)))
+        second_cookies=__import__("http.cookiejar").cookiejar.CookieJar()
+        status,second_session=self.call("/api/auth/login","POST",{"email":second["email"],"password":second_password},second_cookies)
+        self.assertEqual(status,200,second_session)
+        second_csrf=second_session["csrfToken"]
+        profile_data={"budget":10000,"moveInDate":"2026-12-15","preferredAreas":["Dharampeth"],"bio":"Healthcare worker seeking a quiet shared home.","quietHours":"early","cleanliness":"tidy","smoking":"no","pets":"prefer-not","visible":True}
+        self.assertEqual(self.call("/api/roommates/profile","POST",profile_data,second_cookies,second_csrf)[0],200)
+        self.assertEqual(self.call("/api/roommates",cookies=renter_cookies)[1]["profiles"][0]["display_name"],second["name"].split()[0])
+        self.assertNotIn("email",self.call("/api/roommates",cookies=renter_cookies)[1]["profiles"][0])
+        status,interest=self.call(f"/api/roommates/{second['id']}/interest","POST",{"message":"I am looking for a tidy, quiet flat share."},renter_cookies,renter_csrf)
+        self.assertEqual(status,201,interest)
+        self.assertEqual(self.call("/api/roommates/interests",cookies=second_cookies)[1][0]["message"],"I am looking for a tidy, quiet flat share.")
+        self.assertEqual(self.call(f"/api/roommates/interests/{interest['id']}","POST",{"status":"accepted"},second_cookies,second_csrf)[0],200)
+        self.assertEqual(self.call("/api/roommates/interests",cookies=renter_cookies)[1][0]["contact_email"],second["email"])
+
+        status,invitation=self.call(f"/api/owner/listings/{created['id']}/household","POST",{"email":renter["email"]},owner_cookies,owner_csrf)
+        self.assertEqual(status,201,invitation)
+        self.assertEqual(self.call("/api/households",cookies=renter_cookies)[1][0]["status"],"pending")
+        self.assertEqual(self.call(f"/api/households/{created['id']}/membership","POST",{"action":"accept"},renter_cookies,renter_csrf)[0],200)
+        bill_payload={"category":"Electricity","description":"November meter bill","amount":3600,"month":11,"year":2026}
+        self.assertEqual(self.call(f"/api/households/{created['id']}/bills","POST",bill_payload,owner_cookies,owner_csrf)[0],201)
+        renter_bill=self.call(f"/api/households/{created['id']}/bills",cookies=renter_cookies)
+        self.assertEqual(renter_bill[0],200)
+        self.assertEqual(renter_bill[1]["bills"][0]["per_person"],3600)
+        self.assertEqual(self.call(f"/api/households/{created['id']}/bills",cookies=second_cookies)[0],404)
         status,reported=self.call(f"/api/listings/{created['id']}/report","POST",{"reason":"Misleading information","details":"Test report."},renter_cookies,renter_csrf)
         self.assertEqual(status,201,reported)
         reports=self.call("/api/moderation/reports",cookies=mod_cookies)[1]

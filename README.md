@@ -4,7 +4,7 @@ RoomRoute is an independent software project for finding and listing rental room
 
 The repository includes an explicitly labelled synthetic preview dataset for trying the interface. Those records are not real rentals, contacts, reviews, or users.
 
-**Launch status: local preview, not a live public service in this repository snapshot.** Newly submitted real listings do not yet have photo upload; the UI deliberately shows “Owner photos not provided” instead of a stock image. Do not use fictional records or sample photos to imply real availability.
+**Launch status: local preview, not a live public service in this repository snapshot.** Owners can add up to eight HTTPS image links; secure binary uploads, image processing, and managed object storage are not implemented. The UI shows “Owner photos not provided” rather than a stock image when a real listing has no gallery. Do not use fictional records or sample photos to imply real availability.
 
 ## Run the preview
 
@@ -37,8 +37,12 @@ The sample owners, listings, and renter profiles are synthetic and have no crede
 ## Service features
 
 - A RoomRoute-branded, multi-page experience for renter discovery, saved places, owner onboarding, safety guidance, and the renter journey.
-- Browse categories for rooms, flats, PG accommodation, and roommate listings, with location, rent, furnishing, household preference, utilities, parking, and room-setup filters.
+- Browse categories for rooms, flats, PG accommodation, and roommate listings, with location, rent, furnishing, household preference, utilities, parking, access, pet, student-eligibility, laundry, and air-conditioning filters.
+- Owners can provide up to eight HTTPS photo links, bedroom and bathroom counts, parking spaces, accessibility and amenity details. Public locations remain approximate; the map link searches only the neighborhood.
 - Verified renter and owner accounts can continue listing inquiries in a private in-app inbox. Each API read/write checks that the signed-in account is one of the conversation participants; private messages are not exposed to moderators.
+- Renters can opt into roommate profiles with budget, preferred area, move-in timing, and living preferences. Only verified renter accounts see opted-in profiles. Contact email is shared only after the recipient accepts an introduction.
+- Owners can invite verified renters into a private household ledger. Renters accept before joining; active members can add monthly utility bills and see an equal per-person split. RoomRoute records the calculation but does not collect payments.
+- Inquiries include an optional move-in date, and owners can mark them open or dismissed.
 - PostgreSQL-backed data with a bounded connection pool when `DATABASE_URL` is set; production refuses to start without PostgreSQL.
 - Shared Redis fixed-window throttles for registration, listing creation, inquiries, and password-reset email requests.
 - Argon2 password storage, verified-email requirement, expiring single-use verification and password-reset tokens, secure production cookies, CSRF checks, and session revocation on password reset.

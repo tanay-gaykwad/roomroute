@@ -198,8 +198,8 @@ def init_db():
                 "CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE TABLE IF NOT EXISTS owners(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL UNIQUE,role TEXT NOT NULL DEFAULT 'owner',is_sample INTEGER NOT NULL DEFAULT 0)",
                 "CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT NOT NULL UNIQUE,role TEXT NOT NULL,occupation TEXT NOT NULL,budget INTEGER NOT NULL,is_sample INTEGER NOT NULL DEFAULT 0)",
-                "CREATE TABLE IF NOT EXISTS listings(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES owners(id),title TEXT NOT NULL,type TEXT NOT NULL,rent INTEGER NOT NULL,deposit INTEGER NOT NULL,area TEXT NOT NULL,city TEXT NOT NULL DEFAULT 'Nagpur',furnishing TEXT NOT NULL,parking INTEGER NOT NULL,electricity_included INTEGER NOT NULL,available_from TEXT NOT NULL,photo TEXT NOT NULL,summary TEXT NOT NULL,amenities TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',is_sample INTEGER NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),moderation_note TEXT,rent_basis TEXT NOT NULL DEFAULT 'whole_property',owner_consent_at TIMESTAMPTZ,maintenance_mode TEXT NOT NULL DEFAULT 'unknown',maintenance_amount INTEGER NOT NULL DEFAULT 0,gender_preference TEXT NOT NULL DEFAULT 'any')",
-                "CREATE TABLE IF NOT EXISTS inquiries(id BIGSERIAL PRIMARY KEY,listing_id TEXT NOT NULL REFERENCES listings(id),student_id TEXT NOT NULL REFERENCES users(id),message TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'new',created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+                "CREATE TABLE IF NOT EXISTS listings(id TEXT PRIMARY KEY,owner_id TEXT NOT NULL REFERENCES owners(id),title TEXT NOT NULL,type TEXT NOT NULL,rent INTEGER NOT NULL,deposit INTEGER NOT NULL,area TEXT NOT NULL,city TEXT NOT NULL DEFAULT 'Nagpur',furnishing TEXT NOT NULL,parking INTEGER NOT NULL,electricity_included INTEGER NOT NULL,available_from TEXT NOT NULL,photo TEXT NOT NULL,summary TEXT NOT NULL,amenities TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',is_sample INTEGER NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),moderation_note TEXT,rent_basis TEXT NOT NULL DEFAULT 'whole_property',owner_consent_at TIMESTAMPTZ,maintenance_mode TEXT NOT NULL DEFAULT 'unknown',maintenance_amount INTEGER NOT NULL DEFAULT 0,gender_preference TEXT NOT NULL DEFAULT 'any',is_accessible INTEGER NOT NULL DEFAULT 0,open_to_students INTEGER NOT NULL DEFAULT 1,pet_friendly INTEGER NOT NULL DEFAULT 0,parking_spaces INTEGER NOT NULL DEFAULT 0,bathrooms INTEGER NOT NULL DEFAULT 1,bedrooms INTEGER NOT NULL DEFAULT 1,has_laundry INTEGER NOT NULL DEFAULT 0,has_dishwasher INTEGER NOT NULL DEFAULT 0,has_air_conditioning INTEGER NOT NULL DEFAULT 0,hide_address INTEGER NOT NULL DEFAULT 1,photo_gallery TEXT NOT NULL DEFAULT '[]')",
+                "CREATE TABLE IF NOT EXISTS inquiries(id BIGSERIAL PRIMARY KEY,listing_id TEXT NOT NULL REFERENCES listings(id),student_id TEXT NOT NULL REFERENCES users(id),message TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'new',created_at TIMESTAMPTZ NOT NULL DEFAULT now(),move_in_date DATE)",
                 "CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY,email TEXT NOT NULL UNIQUE,name TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('owner','student','employee','moderator')),password_hash TEXT NOT NULL,is_verified INTEGER NOT NULL DEFAULT 0,is_active INTEGER NOT NULL DEFAULT 1,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,csrf_token TEXT NOT NULL,expires_at TIMESTAMPTZ NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE TABLE IF NOT EXISTS auth_attempts(id BIGSERIAL PRIMARY KEY,ip_address TEXT NOT NULL,email TEXT NOT NULL,failed_at TIMESTAMPTZ NOT NULL DEFAULT now())",
@@ -209,6 +209,10 @@ def init_db():
                 "CREATE TABLE IF NOT EXISTS listing_reports(id BIGSERIAL PRIMARY KEY,listing_id TEXT NOT NULL REFERENCES listings(id),reporter_id TEXT NOT NULL REFERENCES accounts(id),reason TEXT NOT NULL,details TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'open',created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY,listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,owner_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,renter_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),last_message_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(listing_id,renter_id))",
                 "CREATE TABLE IF NOT EXISTS messages(id BIGSERIAL PRIMARY KEY,conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,sender_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,body TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now(),read_at TIMESTAMPTZ)",
+                "CREATE TABLE IF NOT EXISTS roommate_profiles(user_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,budget INTEGER NOT NULL,move_in_date DATE,preferred_areas TEXT NOT NULL,bio TEXT NOT NULL,quiet_hours TEXT NOT NULL,cleanliness TEXT NOT NULL,smoking TEXT NOT NULL,pets TEXT NOT NULL,visible INTEGER NOT NULL DEFAULT 0,updated_at TIMESTAMPTZ NOT NULL DEFAULT now())",
+                "CREATE TABLE IF NOT EXISTS roommate_interests(id BIGSERIAL PRIMARY KEY,from_user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,to_user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,message TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(from_user_id,to_user_id))",
+                "CREATE TABLE IF NOT EXISTS household_members(id BIGSERIAL PRIMARY KEY,listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,invited_by TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'active',created_at TIMESTAMPTZ NOT NULL DEFAULT now(),UNIQUE(listing_id,user_id))",
+                "CREATE TABLE IF NOT EXISTS household_bills(id BIGSERIAL PRIMARY KEY,listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,created_by TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,category TEXT NOT NULL,description TEXT NOT NULL,amount INTEGER NOT NULL,month INTEGER NOT NULL,year INTEGER NOT NULL,created_at TIMESTAMPTZ NOT NULL DEFAULT now())",
                 "CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at)",
                 "CREATE INDEX IF NOT EXISTS idx_auth_tokens_active ON auth_tokens(account_id,purpose,expires_at)",
                 "CREATE INDEX IF NOT EXISTS idx_outbox_pending ON email_outbox(sent_at,next_attempt)",
@@ -233,6 +237,9 @@ def init_db():
             db.execute("ALTER TABLE listings ADD COLUMN IF NOT EXISTS maintenance_mode TEXT NOT NULL DEFAULT 'unknown'")
             db.execute("ALTER TABLE listings ADD COLUMN IF NOT EXISTS maintenance_amount INTEGER NOT NULL DEFAULT 0")
             db.execute("ALTER TABLE listings ADD COLUMN IF NOT EXISTS gender_preference TEXT NOT NULL DEFAULT 'any'")
+            for column, definition in (("is_accessible", "INTEGER NOT NULL DEFAULT 0"), ("open_to_students", "INTEGER NOT NULL DEFAULT 1"), ("pet_friendly", "INTEGER NOT NULL DEFAULT 0"), ("parking_spaces", "INTEGER NOT NULL DEFAULT 0"), ("bathrooms", "INTEGER NOT NULL DEFAULT 1"), ("bedrooms", "INTEGER NOT NULL DEFAULT 1"), ("has_laundry", "INTEGER NOT NULL DEFAULT 0"), ("has_dishwasher", "INTEGER NOT NULL DEFAULT 0"), ("has_air_conditioning", "INTEGER NOT NULL DEFAULT 0"), ("hide_address", "INTEGER NOT NULL DEFAULT 1"), ("photo_gallery", "TEXT NOT NULL DEFAULT '[]'")):
+                db.execute(f"ALTER TABLE listings ADD COLUMN IF NOT EXISTS {column} {definition}")
+            db.execute("ALTER TABLE inquiries ADD COLUMN IF NOT EXISTS move_in_date DATE")
             db.execute("ALTER TABLE listings ALTER COLUMN status SET DEFAULT 'pending'")
             db.execute("INSERT INTO schema_migrations(version) VALUES(1) ON CONFLICT(version) DO NOTHING")
             if not db.execute("SELECT 1 FROM schema_migrations WHERE version=2").fetchone():
@@ -250,13 +257,14 @@ def init_db():
                 db.execute("UPDATE listings SET gender_preference='women' WHERE id='RR-001' AND is_sample=1")
                 db.execute("UPDATE listings SET gender_preference='men' WHERE id='RR-003' AND is_sample=1")
                 db.execute("INSERT INTO schema_migrations(version) VALUES(4) ON CONFLICT(version) DO NOTHING")
+            db.execute("INSERT INTO schema_migrations(version) VALUES(5) ON CONFLICT(version) DO NOTHING")
         return
     with db_session() as db:
         db.executescript("""
         CREATE TABLE IF NOT EXISTS owners(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, role TEXT NOT NULL DEFAULT 'owner', is_sample INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, role TEXT NOT NULL, occupation TEXT NOT NULL, budget INTEGER NOT NULL, is_sample INTEGER NOT NULL DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS listings(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id), title TEXT NOT NULL, type TEXT NOT NULL, rent INTEGER NOT NULL, deposit INTEGER NOT NULL, area TEXT NOT NULL, city TEXT NOT NULL DEFAULT 'Nagpur', furnishing TEXT NOT NULL, parking INTEGER NOT NULL, electricity_included INTEGER NOT NULL, available_from TEXT NOT NULL, photo TEXT NOT NULL, summary TEXT NOT NULL, amenities TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', is_sample INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, moderation_note TEXT, rent_basis TEXT NOT NULL DEFAULT 'whole_property', owner_consent_at TEXT, maintenance_mode TEXT NOT NULL DEFAULT 'unknown', maintenance_amount INTEGER NOT NULL DEFAULT 0, gender_preference TEXT NOT NULL DEFAULT 'any');
-        CREATE TABLE IF NOT EXISTS inquiries(id INTEGER PRIMARY KEY AUTOINCREMENT, listing_id TEXT NOT NULL REFERENCES listings(id), student_id TEXT NOT NULL REFERENCES users(id), message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS listings(id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id), title TEXT NOT NULL, type TEXT NOT NULL, rent INTEGER NOT NULL, deposit INTEGER NOT NULL, area TEXT NOT NULL, city TEXT NOT NULL DEFAULT 'Nagpur', furnishing TEXT NOT NULL, parking INTEGER NOT NULL, electricity_included INTEGER NOT NULL, available_from TEXT NOT NULL, photo TEXT NOT NULL, summary TEXT NOT NULL, amenities TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', is_sample INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, moderation_note TEXT, rent_basis TEXT NOT NULL DEFAULT 'whole_property', owner_consent_at TEXT, maintenance_mode TEXT NOT NULL DEFAULT 'unknown', maintenance_amount INTEGER NOT NULL DEFAULT 0, gender_preference TEXT NOT NULL DEFAULT 'any', is_accessible INTEGER NOT NULL DEFAULT 0, open_to_students INTEGER NOT NULL DEFAULT 1, pet_friendly INTEGER NOT NULL DEFAULT 0, parking_spaces INTEGER NOT NULL DEFAULT 0, bathrooms INTEGER NOT NULL DEFAULT 1, bedrooms INTEGER NOT NULL DEFAULT 1, has_laundry INTEGER NOT NULL DEFAULT 0, has_dishwasher INTEGER NOT NULL DEFAULT 0, has_air_conditioning INTEGER NOT NULL DEFAULT 0, hide_address INTEGER NOT NULL DEFAULT 1, photo_gallery TEXT NOT NULL DEFAULT '[]');
+        CREATE TABLE IF NOT EXISTS inquiries(id INTEGER PRIMARY KEY AUTOINCREMENT, listing_id TEXT NOT NULL REFERENCES listings(id), student_id TEXT NOT NULL REFERENCES users(id), message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, move_in_date TEXT);
         CREATE TABLE IF NOT EXISTS accounts(id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','student','employee','moderator')), password_hash TEXT NOT NULL, is_verified INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, csrf_token TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS auth_attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, ip_address TEXT NOT NULL, email TEXT NOT NULL, failed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
@@ -266,6 +274,10 @@ def init_db():
         CREATE TABLE IF NOT EXISTS listing_reports(id INTEGER PRIMARY KEY AUTOINCREMENT, listing_id TEXT NOT NULL REFERENCES listings(id), reporter_id TEXT NOT NULL REFERENCES accounts(id), reason TEXT NOT NULL, details TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'open', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY, listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE, owner_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, renter_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_message_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(listing_id,renter_id));
         CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, sender_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, body TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, read_at TEXT);
+        CREATE TABLE IF NOT EXISTS roommate_profiles(user_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,budget INTEGER NOT NULL,move_in_date TEXT,preferred_areas TEXT NOT NULL,bio TEXT NOT NULL,quiet_hours TEXT NOT NULL,cleanliness TEXT NOT NULL,smoking TEXT NOT NULL,pets TEXT NOT NULL,visible INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS roommate_interests(id INTEGER PRIMARY KEY AUTOINCREMENT,from_user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,to_user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,message TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(from_user_id,to_user_id));
+        CREATE TABLE IF NOT EXISTS household_members(id INTEGER PRIMARY KEY AUTOINCREMENT,listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,user_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,invited_by TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,status TEXT NOT NULL DEFAULT 'active',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE(listing_id,user_id));
+        CREATE TABLE IF NOT EXISTS household_bills(id INTEGER PRIMARY KEY AUTOINCREMENT,listing_id TEXT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,created_by TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,category TEXT NOT NULL,description TEXT NOT NULL,amount INTEGER NOT NULL,month INTEGER NOT NULL,year INTEGER NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
         CREATE INDEX IF NOT EXISTS idx_auth_attempts_lookup ON auth_attempts(ip_address,email,failed_at);
@@ -300,6 +312,12 @@ def init_db():
             db.execute("ALTER TABLE listings ADD COLUMN maintenance_amount INTEGER NOT NULL DEFAULT 0")
         if "gender_preference" not in columns:
             db.execute("ALTER TABLE listings ADD COLUMN gender_preference TEXT NOT NULL DEFAULT 'any'")
+        for column, definition in (("is_accessible", "INTEGER NOT NULL DEFAULT 0"), ("open_to_students", "INTEGER NOT NULL DEFAULT 1"), ("pet_friendly", "INTEGER NOT NULL DEFAULT 0"), ("parking_spaces", "INTEGER NOT NULL DEFAULT 0"), ("bathrooms", "INTEGER NOT NULL DEFAULT 1"), ("bedrooms", "INTEGER NOT NULL DEFAULT 1"), ("has_laundry", "INTEGER NOT NULL DEFAULT 0"), ("has_dishwasher", "INTEGER NOT NULL DEFAULT 0"), ("has_air_conditioning", "INTEGER NOT NULL DEFAULT 0"), ("hide_address", "INTEGER NOT NULL DEFAULT 1"), ("photo_gallery", "TEXT NOT NULL DEFAULT '[]'")):
+            if column not in columns:
+                db.execute(f"ALTER TABLE listings ADD COLUMN {column} {definition}")
+        inquiry_columns = {row["name"] for row in db.execute("PRAGMA table_info(inquiries)")}
+        if "move_in_date" not in inquiry_columns:
+            db.execute("ALTER TABLE inquiries ADD COLUMN move_in_date TEXT")
         db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES(1)")
         if not db.execute("SELECT 1 FROM schema_migrations WHERE version=2").fetchone():
             db.execute("UPDATE listings SET status='pending' WHERE is_sample=0 AND status='active'")
@@ -316,6 +334,7 @@ def init_db():
             db.execute("UPDATE listings SET gender_preference='women' WHERE id='RR-001' AND is_sample=1")
             db.execute("UPDATE listings SET gender_preference='men' WHERE id='RR-003' AND is_sample=1")
             db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES(4)")
+        db.execute("INSERT OR IGNORE INTO schema_migrations(version) VALUES(5)")
 
 
 def seed_sample_data():
@@ -359,9 +378,29 @@ def rows(db, sql, params=()):
 def listing_json(row):
     # Never present a stock/demo image as evidence of a real property's condition.
     is_sample = bool(row.get("is_sample"))
-    row["photo"] = row.get("photo") if is_sample else None
+    gallery_raw = row.get("photo_gallery") or "[]"
+    try:
+        gallery = json.loads(gallery_raw) if isinstance(gallery_raw, str) else gallery_raw
+    except (TypeError, ValueError):
+        gallery = []
+    gallery = [url for url in gallery if isinstance(url, str) and url.startswith("https://")][:8]
+    row["photo"] = row.get("photo") if is_sample else (gallery[0] if gallery else None)
+    row["gallery"] = gallery or ([row["photo"]] if row["photo"] else [])
     row.pop("moderation_note",None)
     row["parking"] = bool(row["parking"])
+    for column in ("is_accessible", "open_to_students", "pet_friendly", "has_laundry", "has_dishwasher", "has_air_conditioning", "hide_address"):
+        row[column] = bool(row.get(column, 0))
+    row["parkingSpaces"] = row.pop("parking_spaces", 0)
+    row["bedrooms"] = row.get("bedrooms", 1)
+    row["bathrooms"] = row.get("bathrooms", 1)
+    row["accessible"] = row.pop("is_accessible", False)
+    row["openToStudents"] = row.pop("open_to_students", True)
+    row["petFriendly"] = row.pop("pet_friendly", False)
+    row["hasLaundry"] = row.pop("has_laundry", False)
+    row["hasDishwasher"] = row.pop("has_dishwasher", False)
+    row["hasAirConditioning"] = row.pop("has_air_conditioning", False)
+    row["hideAddress"] = row.pop("hide_address", True)
+    row.pop("photo_gallery", None)
     row["electricityIncluded"] = bool(row.pop("electricity_included"))
     row["rentBasis"] = row.get("rent_basis", "whole_property")
     row.pop("rent_basis", None)
@@ -376,11 +415,10 @@ def listing_json(row):
     row["isSample"] = bool(row.pop("is_sample"))
     row["city"] = "Nagpur"
     row["state"] = "Maharashtra"
-    row["beds"] = 2 if row["type"] == "2 BHK flat" else 1
-    row["baths"] = 2 if row["type"] == "2 BHK flat" else 1
-    row["gallery"] = [row["photo"], row["photo"]]
+    row["beds"] = row["bedrooms"]
+    row["baths"] = row["bathrooms"]
     row["createdAt"] = row.get("created_at")
-    row["address"] = "Near neighborhood landmark"
+    row["address"] = "Approximate neighborhood only" if row["hideAddress"] else "Exact address shared by owner after inquiry"
     return row
 
 
@@ -411,7 +449,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), microphone=(), payment=(), usb=()")
         self.send_header("Cross-Origin-Opener-Policy", "same-origin")
         self.send_header("X-Permitted-Cross-Domain-Policies", "none")
-        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' https://images.unsplash.com data:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'; worker-src 'self'")
+        self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' https: data:; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'; worker-src 'self'")
         if os.environ.get("APP_ENV", "development").lower() == "production":
             self.send_header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         super().end_headers()
@@ -572,6 +610,12 @@ class Handler(SimpleHTTPRequestHandler):
                     if value:
                         clauses.append(f"{column}=?")
                         params.append(value[:100])
+                for key,column in (("accessible","is_accessible"),("pets","pet_friendly"),("students","open_to_students"),("laundry","has_laundry"),("ac","has_air_conditioning")):
+                    value=one(key)
+                    if value in {"yes", "true", "1"}:
+                        clauses.append(f"{column}=1")
+                    elif value not in {"", "no", "false", "0"}:
+                        return self.send_json({"error":"Choose a valid amenity filter."},400)
                 category=one("category")
                 if category == "rooms":
                     clauses.append("type IN ('Private room','Shared room')")
@@ -627,8 +671,62 @@ class Handler(SimpleHTTPRequestHandler):
                 current = self.require_session(db, role="owner")
                 if not current:
                     return
-                self.send_json(rows(db, "SELECT i.id,i.listing_id,i.student_id,i.message,i.status,i.created_at,l.title listing_title,u.name student_name,u.role student_role FROM inquiries i JOIN listings l ON l.id=i.listing_id JOIN users u ON u.id=i.student_id WHERE l.owner_id=? ORDER BY i.id DESC", (current["id"],)))
+                self.send_json(rows(db, "SELECT i.id,i.listing_id,i.student_id,i.message,i.status,i.created_at,i.move_in_date,l.title listing_title,u.name student_name,u.role student_role FROM inquiries i JOIN listings l ON l.id=i.listing_id JOIN users u ON u.id=i.student_id WHERE l.owner_id=? ORDER BY i.id DESC", (current["id"],)))
                 return
+            if path == "/api/roommates":
+                current=self.require_session(db)
+                if not current: return
+                if current["role"] not in {"student","employee"}:
+                    return self.send_json({"error":"Roommate profiles are for renter accounts."},403)
+                profiles=rows(db,"SELECT p.user_id,a.name,p.budget,p.move_in_date,p.preferred_areas,p.bio,p.quiet_hours,p.cleanliness,p.smoking,p.pets,p.updated_at FROM roommate_profiles p JOIN accounts a ON a.id=p.user_id WHERE p.visible=1 AND p.user_id<>? AND a.is_verified=1 ORDER BY p.updated_at DESC LIMIT 100",(current["id"],))
+                for profile in profiles:
+                    profile["preferred_areas"]=json.loads(profile["preferred_areas"])
+                    profile["display_name"]=profile.pop("name").split()[0]
+                own=db.execute("SELECT budget,move_in_date,preferred_areas,bio,quiet_hours,cleanliness,smoking,pets,visible FROM roommate_profiles WHERE user_id=?",(current["id"],)).fetchone()
+                interests=rows(db,"SELECT i.id,i.from_user_id,i.to_user_id,i.message,i.status,i.created_at,a.name sender_name FROM roommate_interests i JOIN accounts a ON a.id=i.from_user_id WHERE i.from_user_id=? OR i.to_user_id=? ORDER BY i.created_at DESC LIMIT 100",(current["id"],current["id"]))
+                for interest in interests:
+                    interest["contact_email"]=""
+                    if interest["status"]=="accepted":
+                        peer=interest["to_user_id"] if interest["from_user_id"]==current["id"] else interest["from_user_id"]
+                        contact=db.execute("SELECT email FROM accounts WHERE id=?",(peer,)).fetchone()
+                        interest["contact_email"]=contact["email"] if contact else ""
+                own=dict(own) if own else None
+                if own:
+                    own["preferred_areas"]=json.loads(own["preferred_areas"]); own["visible"]=bool(own["visible"])
+                self.send_json({"profile":own,"profiles":profiles,"interests":interests}); return
+            if path.startswith("/api/households/") and path.endswith("/bills"):
+                current=self.require_session(db)
+                if not current: return
+                listing_id=path[len("/api/households/"):-len("/bills")].strip("/")
+                can_access=db.execute("SELECT 1 FROM listings l WHERE l.id=? AND l.owner_id=? UNION SELECT 1 FROM household_members WHERE listing_id=? AND user_id=? AND status='active'",(listing_id,current["id"],listing_id,current["id"])).fetchone()
+                if not can_access: return self.send_json({"error":"Household not found."},404)
+                owner_view=bool(db.execute("SELECT 1 FROM listings WHERE id=? AND owner_id=?",(listing_id,current["id"])).fetchone())
+                member_statuses="('active','pending')" if owner_view else "('active')"
+                members=rows(db,f"SELECT a.id,a.name,m.status FROM household_members m JOIN accounts a ON a.id=m.user_id WHERE m.listing_id=? AND m.status IN {member_statuses} ORDER BY m.created_at",(listing_id,))
+                bills=rows(db,"SELECT id,category,description,amount,month,year,created_at FROM household_bills WHERE listing_id=? ORDER BY year DESC,month DESC,id DESC LIMIT 100",(listing_id,))
+                split_count=max(1,sum(1 for m in members if m["status"]=="active"))
+                for bill in bills: bill["per_person"]=round(bill["amount"]/split_count,2)
+                self.send_json({"members":members,"bills":bills,"activeMembers":split_count}); return
+            if path == "/api/households":
+                current=self.require_session(db)
+                if not current: return
+                memberships=rows(db,"SELECT m.id,m.listing_id,m.status,l.title,l.area,m.created_at FROM household_members m JOIN listings l ON l.id=m.listing_id WHERE m.user_id=? ORDER BY m.created_at DESC",(current["id"],))
+                for membership in memberships:
+                    membership["bills"]=rows(db,"SELECT b.id,b.category,b.description,b.amount,b.month,b.year,b.created_at FROM household_bills b WHERE b.listing_id=? ORDER BY b.year DESC,b.month DESC,b.id DESC LIMIT 100",(membership["listing_id"],)) if membership["status"]=="active" else []
+                    count=max(1,db.execute("SELECT COUNT(*) FROM household_members WHERE listing_id=? AND status='active'",(membership["listing_id"],)).fetchone()[0])
+                    for bill in membership["bills"]: bill["per_person"]=round(bill["amount"]/count,2)
+                self.send_json(memberships); return
+            if path == "/api/roommates/interests":
+                current=self.require_session(db)
+                if not current: return
+                interests=rows(db,"SELECT i.id,i.from_user_id,i.to_user_id,i.message,i.status,i.created_at,a.name sender_name FROM roommate_interests i JOIN accounts a ON a.id=i.from_user_id WHERE i.from_user_id=? OR i.to_user_id=? ORDER BY i.created_at DESC LIMIT 100",(current["id"],current["id"]))
+                for interest in interests:
+                    interest["contact_email"]=""
+                    if interest["status"]=="accepted":
+                        peer=interest["to_user_id"] if interest["from_user_id"]==current["id"] else interest["from_user_id"]
+                        contact=db.execute("SELECT email FROM accounts WHERE id=?",(peer,)).fetchone()
+                        interest["contact_email"]=contact["email"] if contact else ""
+                self.send_json(interests); return
             if path == "/api/conversations":
                 current=self.require_session(db)
                 if not current: return
@@ -659,11 +757,17 @@ class Handler(SimpleHTTPRequestHandler):
                 if not current: return
                 profile = db.execute("SELECT name,email,role,is_verified,created_at FROM accounts WHERE id=?", (current["id"],)).fetchone()
                 renter_profile = db.execute("SELECT occupation,budget FROM users WHERE id=?", (current["id"],)).fetchone()
+                roommate_profile=db.execute("SELECT budget,move_in_date,preferred_areas,bio,quiet_hours,cleanliness,smoking,pets,visible,updated_at FROM roommate_profiles WHERE user_id=?",(current["id"],)).fetchone()
+                if roommate_profile:
+                    roommate_profile=dict(roommate_profile); roommate_profile["preferred_areas"]=json.loads(roommate_profile["preferred_areas"]); roommate_profile["visible"]=bool(roommate_profile["visible"])
                 user_listings = rows(db, "SELECT id,title,type,rent,deposit,rent_basis,owner_consent_at,maintenance_mode,maintenance_amount,area,available_from,status,created_at FROM listings WHERE owner_id=?", (current["id"],))
                 messages = rows(db, "SELECT i.id,i.listing_id,i.message,i.status,i.created_at,l.title FROM inquiries i JOIN listings l ON l.id=i.listing_id WHERE i.student_id=?", (current["id"],))
                 reports = rows(db,"SELECT listing_id,reason,details,status,created_at FROM listing_reports WHERE reporter_id=?",(current["id"],))
                 conversations=rows(db,"SELECT c.id,c.listing_id,c.created_at,c.last_message_at,m.sender_id,m.body,m.created_at message_created_at FROM conversations c JOIN messages m ON m.conversation_id=c.id WHERE c.owner_id=? OR c.renter_id=? ORDER BY c.last_message_at,m.created_at",(current["id"],current["id"]))
-                self.send_json({"account": dict(profile) if profile else {}, "renterProfile":dict(renter_profile) if renter_profile else None, "listings": user_listings, "inquiries": messages, "conversations":conversations, "reports":reports})
+                interests=rows(db,"SELECT id,from_user_id,to_user_id,message,status,created_at FROM roommate_interests WHERE from_user_id=? OR to_user_id=?",(current["id"],current["id"]))
+                memberships=rows(db,"SELECT m.listing_id,m.status,l.title,l.area FROM household_members m JOIN listings l ON l.id=m.listing_id WHERE m.user_id=?",(current["id"],))
+                bills=rows(db,"SELECT b.id,b.listing_id,b.category,b.description,b.amount,b.month,b.year,b.created_at FROM household_bills b WHERE b.created_by=? OR b.listing_id IN (SELECT listing_id FROM household_members WHERE user_id=?) OR b.listing_id IN (SELECT id FROM listings WHERE owner_id=?) ORDER BY b.year DESC,b.month DESC",(current["id"],current["id"],current["id"]))
+                self.send_json({"account": dict(profile) if profile else {}, "renterProfile":dict(renter_profile) if renter_profile else None,"roommateProfile":roommate_profile,"roommateInterests":interests,"households":memberships,"householdBills":bills,"listings": user_listings, "inquiries": messages, "conversations":conversations, "reports":reports})
                 return
             if path in {"/api/moderation/listings", "/api/moderation/reports"}:
                 current = self.require_session(db, role="moderator")
@@ -835,6 +939,10 @@ class Handler(SimpleHTTPRequestHandler):
                         return self.send_json({"error": "Too many inquiries. Try again later."}, 429)
                     listing_id = str(payload.get("listingId", ""))
                     message = str(payload.get("message", "")).strip()
+                    move_in_date = str(payload.get("moveInDate", "")).strip() or None
+                    if move_in_date:
+                        try: datetime.strptime(move_in_date, "%Y-%m-%d")
+                        except ValueError: return self.send_json({"error":"Choose a valid move-in date."},400)
                     student_id = current["id"]
                     if len(message) < 8 or len(message) > 2000:
                         return self.send_json({"error": "Message must be between 8 and 2,000 characters."}, 400)
@@ -843,7 +951,7 @@ class Handler(SimpleHTTPRequestHandler):
                         return self.send_json({"error": "This listing is no longer available."}, 404)
                     if listing["is_sample"]:
                         return self.send_json({"error": "Sample listings are fictional and cannot receive inquiries."}, 400)
-                    cursor = db.execute("INSERT INTO inquiries(listing_id,student_id,message) VALUES(?,?,?) RETURNING id", (listing_id, student_id, message))
+                    cursor = db.execute("INSERT INTO inquiries(listing_id,student_id,message,move_in_date) VALUES(?,?,?,?) RETURNING id", (listing_id, student_id, message, move_in_date))
                     inquiry_id = cursor.fetchone()[0]
                     owner = db.execute("SELECT o.email,o.name,l.title,l.owner_id FROM listings l JOIN owners o ON o.id=l.owner_id WHERE l.id=?", (listing_id,)).fetchone()
                     renter = db.execute("SELECT name FROM accounts WHERE id=?", (student_id,)).fetchone()
@@ -857,6 +965,101 @@ class Handler(SimpleHTTPRequestHandler):
                         base_url=os.environ.get("ROOMROUTE_PUBLIC_URL","http://127.0.0.1:8765").rstrip("/")
                         queue_email(db,owner["email"],"New RoomRoute rental inquiry",f"Hello {owner['name']},\n\n{renter['name'] if renter else 'A renter'} sent an inquiry about {owner['title']}. Sign in to RoomRoute to reply securely.\n\n{base_url}/")
                     return self.send_json({"id": inquiry_id,"conversationId":conversation_id,"message": "Inquiry received. You can continue the conversation in your secure RoomRoute inbox."}, 201)
+                if path.startswith("/api/inquiries/") and path.endswith("/status"):
+                    if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
+                    current=self.require_session(db,role="owner",csrf=True)
+                    if not current: return
+                    inquiry_id=path[len("/api/inquiries/"):-len("/status")].strip("/")
+                    status=str(payload.get("status",""))
+                    if status not in {"new","open","dismissed"}: return self.send_json({"error":"Choose a valid inquiry status."},400)
+                    changed=db.execute("UPDATE inquiries SET status=? WHERE id=? AND listing_id IN (SELECT id FROM listings WHERE owner_id=? AND is_sample=0)",(status,inquiry_id,current["id"])).rowcount
+                    if not changed: return self.send_json({"error":"Inquiry not found."},404)
+                    return self.send_json({"message":"Inquiry status updated."})
+                if path == "/api/roommates/profile":
+                    if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
+                    current=self.require_session(db,csrf=True)
+                    if not current: return
+                    if current["role"] not in {"student","employee"}: return self.send_json({"error":"Roommate profiles are for renter accounts."},403)
+                    budget=payload.get("budget"); areas=payload.get("preferredAreas",[]); bio=str(payload.get("bio","")).strip()
+                    quiet=str(payload.get("quietHours","flexible")); clean=str(payload.get("cleanliness","flexible")); smoking=str(payload.get("smoking","prefer-not")); pets=str(payload.get("pets","flexible")); visible=payload.get("visible") is True
+                    move_in=str(payload.get("moveInDate","")).strip() or None
+                    if type(budget) is not int or not 0<=budget<=100000 or not isinstance(areas,list) or len(areas)>8 or any(area not in AREAS for area in areas) or len(bio)>240 or quiet not in {"early","flexible","late"} or clean not in {"relaxed","balanced","tidy"} or smoking not in {"no","prefer-not","okay"} or pets not in {"no","prefer-not","okay"}:
+                        return self.send_json({"error":"Review your budget, areas, short bio and living preferences."},400)
+                    if move_in:
+                        try: datetime.strptime(move_in,"%Y-%m-%d")
+                        except ValueError: return self.send_json({"error":"Choose a valid move-in date."},400)
+                    db.execute("INSERT INTO roommate_profiles(user_id,budget,move_in_date,preferred_areas,bio,quiet_hours,cleanliness,smoking,pets,visible,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET budget=excluded.budget,move_in_date=excluded.move_in_date,preferred_areas=excluded.preferred_areas,bio=excluded.bio,quiet_hours=excluded.quiet_hours,cleanliness=excluded.cleanliness,smoking=excluded.smoking,pets=excluded.pets,visible=excluded.visible,updated_at=excluded.updated_at",(current["id"],budget,move_in,json.dumps(areas),bio,quiet,clean,smoking,pets,int(visible),database_now()))
+                    return self.send_json({"message":"Roommate profile saved."})
+                if path.startswith("/api/roommates/") and path.endswith("/interest"):
+                    if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
+                    current=self.require_session(db,csrf=True)
+                    if not current: return
+                    if current["role"] not in {"student","employee"}: return self.send_json({"error":"Roommate matching is for renter accounts."},403)
+                    target=path[len("/api/roommates/"):-len("/interest")].strip("/"); message=str(payload.get("message","")).strip()
+                    if len(message)<8 or len(message)>500: return self.send_json({"error":"Write a short introduction between 8 and 500 characters."},400)
+                    visible=db.execute("SELECT 1 FROM roommate_profiles WHERE user_id=? AND visible=1",(target,)).fetchone()
+                    if not visible or target==current["id"]: return self.send_json({"error":"This roommate profile is not available."},404)
+                    if not self.allow_write(db,"roommate_interest",10,3600): return self.send_json({"error":"Too many requests. Try again later."},429)
+                    db.execute("INSERT INTO roommate_interests(from_user_id,to_user_id,message) VALUES(?,?,?) ON CONFLICT(from_user_id,to_user_id) DO UPDATE SET message=excluded.message,status='pending',created_at=?",(current["id"],target,message,database_now()))
+                    interest=db.execute("SELECT id FROM roommate_interests WHERE from_user_id=? AND to_user_id=?",(current["id"],target)).fetchone()
+                    return self.send_json({"id":interest["id"],"message":"Your introduction was sent privately."},201)
+                if path.startswith("/api/roommates/interests/"):
+                    if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
+                    current=self.require_session(db,csrf=True)
+                    if not current: return
+                    interest_id=path[len("/api/roommates/interests/"):].strip("/"); status=str(payload.get("status",""))
+                    if status not in {"accepted","declined"}: return self.send_json({"error":"Choose accept or decline."},400)
+                    changed=db.execute("UPDATE roommate_interests SET status=? WHERE id=? AND to_user_id=? AND status='pending'",(status,interest_id,current["id"])).rowcount
+                    if not changed: return self.send_json({"error":"Request not found."},404)
+                    if status=="accepted":
+                        sender=db.execute("SELECT email,name FROM accounts WHERE id=(SELECT from_user_id FROM roommate_interests WHERE id=?)",(interest_id,)).fetchone()
+                        recipient=db.execute("SELECT email,name FROM accounts WHERE id=?",(current["id"],)).fetchone()
+                        if sender and recipient:
+                            queue_email(db,sender["email"],"Your RoomRoute roommate introduction was accepted",f"Hello, {recipient['name']} accepted your RoomRoute introduction. Sign in to continue arranging details safely.")
+                            queue_email(db,recipient["email"],"RoomRoute roommate introduction accepted",f"Hello, your RoomRoute connection request was accepted. Sign in to continue arranging details safely.")
+                    return self.send_json({"message":"Request updated."})
+                if path.startswith("/api/owner/listings/") and path.endswith("/household"):
+                    if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
+                    current=self.require_session(db,role="owner",csrf=True)
+                    if not current: return
+                    listing_id=path[len("/api/owner/listings/"):-len("/household")].strip("/")
+                    listing=db.execute("SELECT id,title FROM listings WHERE id=? AND owner_id=? AND is_sample=0",(listing_id,current["id"])).fetchone()
+                    if not listing: return self.send_json({"error":"Listing not found."},404)
+                    if payload.get("action")=="remove":
+                        removed=db.execute("DELETE FROM household_members WHERE id=? AND listing_id=?",(payload.get("memberId"),listing_id)).rowcount
+                        if not removed: return self.send_json({"error":"Household member not found."},404)
+                        return self.send_json({"message":"Household access removed."})
+                    email=str(payload.get("email","")).strip().lower()
+                    member=db.execute("SELECT id,name,email,role FROM accounts WHERE lower(email)=? AND role IN ('student','employee') AND is_verified=1 AND is_active=1",(email,)).fetchone()
+                    if not member: return self.send_json({"error":"Enter the email of a verified RoomRoute renter account."},404)
+                    db.execute("INSERT INTO household_members(listing_id,user_id,invited_by,status) VALUES(?,?,?,'pending') ON CONFLICT(listing_id,user_id) DO UPDATE SET status='pending',invited_by=excluded.invited_by",(listing_id,member["id"],current["id"]))
+                    queue_email(db,member["email"],"RoomRoute household invitation",f"Hello {member['name']}, the owner invited you to join the household for {listing['title']}. Sign in to RoomRoute to review the invitation.")
+                    return self.send_json({"message":"Household invitation sent. The renter must accept before seeing shared bills."},201)
+                if path.startswith("/api/households/") and path.endswith("/membership"):
+                    if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
+                    current=self.require_session(db,csrf=True)
+                    if not current: return
+                    listing_id=path[len("/api/households/"):-len("/membership")].strip("/"); action=str(payload.get("action",""))
+                    if action not in {"accept","decline","leave"}: return self.send_json({"error":"Choose accept, decline, or leave."},400)
+                    status="active" if action=="accept" else "declined" if action=="decline" else "left"
+                    changed=db.execute("UPDATE household_members SET status=? WHERE listing_id=? AND user_id=? AND status IN ('pending','active')",(status,listing_id,current["id"])).rowcount
+                    if not changed: return self.send_json({"error":"Household invitation not found."},404)
+                    return self.send_json({"message":"Household membership updated."})
+                if path.startswith("/api/households/") and path.endswith("/bills"):
+                    if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
+                    current=self.require_session(db,csrf=True)
+                    if not current: return
+                    listing_id=path[len("/api/households/"):-len("/bills")].strip("/")
+                    can_access=db.execute("SELECT 1 FROM listings l WHERE l.id=? AND l.owner_id=? UNION SELECT 1 FROM household_members WHERE listing_id=? AND user_id=? AND status='active'",(listing_id,current["id"],listing_id,current["id"])).fetchone()
+                    if not can_access: return self.send_json({"error":"Household not found."},404)
+                    category=str(payload.get("category","")); description=str(payload.get("description","")).strip(); amount=payload.get("amount"); month=payload.get("month"); year=payload.get("year")
+                    if category not in {"Electricity","Water","Gas","Internet","Other"} or len(description)>120 or type(amount) is not int or not 1<=amount<=1000000 or type(month) is not int or not 1<=month<=12 or type(year) is not int or not 2020<=year<=2100:
+                        return self.send_json({"error":"Enter a valid bill category, amount, month, and year."},400)
+                    if current["role"]!="owner" and current["id"]!=db.execute("SELECT owner_id FROM listings WHERE id=?",(listing_id,)).fetchone()["owner_id"]:
+                        member=db.execute("SELECT 1 FROM household_members WHERE listing_id=? AND user_id=? AND status='active'",(listing_id,current["id"])).fetchone()
+                        if not member: return self.send_json({"error":"Only active household members can add bills."},403)
+                    db.execute("INSERT INTO household_bills(listing_id,created_by,category,description,amount,month,year) VALUES(?,?,?,?,?,?,?)",(listing_id,current["id"],category,description,amount,month,year))
+                    return self.send_json({"message":"Bill added to the private household ledger."},201)
                 if path.startswith("/api/conversations/") and path.endswith("/messages"):
                     if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)
                     current=self.require_session(db,csrf=True)
@@ -901,11 +1104,15 @@ class Handler(SimpleHTTPRequestHandler):
                     if type(maintenance_amount) is not int or maintenance_amount < 0 or maintenance_amount > 1000000 or maintenance_mode not in {"included", "extra", "none"} or (maintenance_mode == "extra" and maintenance_amount < 1) or (maintenance_mode != "extra" and maintenance_amount != 0):
                         return self.send_json({"error": "Choose how maintenance is charged and enter an amount only when it is billed separately."}, 400)
                     gender_preference=str(payload.get("genderPreference","any"))
-                    if not title or len(title) > 100 or kind not in {"Private room", "Shared room", "1 BHK flat", "2 BHK flat", "PG accommodation", "Roommate wanted"} or area not in AREAS or furnishing not in {"Fully furnished", "Semi furnished", "Unfurnished"} or rent_basis not in {"per_person", "whole_property"} or gender_preference not in {"any","men","women"} or rent < 1 or rent > 1000000 or deposit < 0 or deposit > 10000000 or not valid_date or len(summary) > 500 or type(payload.get("parking")) is not bool or type(payload.get("electricityIncluded")) is not bool or payload.get("ownerAuthorized") is not True:
+                    parking_spaces=payload.get("parkingSpaces",0); bedrooms=payload.get("bedrooms",1); bathrooms=payload.get("bathrooms",1)
+                    photos=payload.get("photos",[])
+                    amenity_flags={"accessible":payload.get("accessible",False),"openToStudents":payload.get("openToStudents",True),"petFriendly":payload.get("petFriendly",False),"hasLaundry":payload.get("hasLaundry",False),"hasDishwasher":payload.get("hasDishwasher",False),"hasAirConditioning":payload.get("hasAirConditioning",False)}
+                    valid_photos=isinstance(photos,list) and len(photos)<=8 and all(isinstance(url,str) and len(url)<=2048 and urlparse(url).scheme=="https" and bool(urlparse(url).hostname) and not urlparse(url).username and not urlparse(url).password for url in photos)
+                    if not title or len(title) > 100 or kind not in {"Private room", "Shared room", "1 BHK flat", "2 BHK flat", "PG accommodation", "Roommate wanted"} or area not in AREAS or furnishing not in {"Fully furnished", "Semi furnished", "Unfurnished"} or rent_basis not in {"per_person", "whole_property"} or gender_preference not in {"any","men","women"} or rent < 1 or rent > 1000000 or deposit < 0 or deposit > 10000000 or not valid_date or len(summary) > 500 or type(payload.get("parking")) is not bool or type(payload.get("electricityIncluded")) is not bool or type(parking_spaces) is not int or not 0<=parking_spaces<=50 or type(bedrooms) is not int or not 1<=bedrooms<=50 or type(bathrooms) is not int or not 1<=bathrooms<=50 or any(type(value) is not bool for value in amenity_flags.values()) or not valid_photos or payload.get("ownerAuthorized") is not True:
                         return self.send_json({"error": "Enter valid listing details, choose how rent is charged, and confirm you are authorized to publish this place."}, 400)
                     new_id = f"RR-{secrets.token_hex(12)}"
                     consented_at = datetime.now(timezone.utc).isoformat()
-                    db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample,status,rent_basis,owner_consent_at,maintenance_mode,maintenance_amount,gender_preference) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'pending',?,?,?,?,?)", (new_id, current["id"], title, kind, rent, deposit, area, furnishing, int(payload["parking"]), int(payload["electricityIncluded"]), available_from, "", summary, json.dumps([]), rent_basis, consented_at, maintenance_mode, maintenance_amount,gender_preference))
+                    db.execute("INSERT INTO listings(id,owner_id,title,type,rent,deposit,area,furnishing,parking,electricity_included,available_from,photo,summary,amenities,is_sample,status,rent_basis,owner_consent_at,maintenance_mode,maintenance_amount,gender_preference,is_accessible,open_to_students,pet_friendly,parking_spaces,bathrooms,bedrooms,has_laundry,has_dishwasher,has_air_conditioning,hide_address,photo_gallery) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'pending',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (new_id, current["id"], title, kind, rent, deposit, area, furnishing, int(payload["parking"]), int(payload["electricityIncluded"]), available_from, photos[0] if photos else "", summary, json.dumps([]), rent_basis, consented_at, maintenance_mode, maintenance_amount,gender_preference,int(amenity_flags["accessible"]),int(amenity_flags["openToStudents"]),int(amenity_flags["petFriendly"]),parking_spaces,bathrooms,bedrooms,int(amenity_flags["hasLaundry"]),int(amenity_flags["hasDishwasher"]),int(amenity_flags["hasAirConditioning"]),1,json.dumps(photos)))
                     return self.send_json({"id": new_id, "status":"pending", "message": "Listing submitted for review. It will appear publicly after approval."}, 201)
                 if path.startswith("/api/owner/listings/") and path.endswith("/availability"):
                     if not self.check_origin(): return self.send_json({"error":"Request origin could not be verified."},403)

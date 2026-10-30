@@ -69,6 +69,10 @@ Never use the Compose default passwords or Mailpit for a public deployment. Use 
 
 See [DEPLOYMENT.md](DEPLOYMENT.md), [SECURITY.md](SECURITY.md), [SECURITY_REVIEW.md](SECURITY_REVIEW.md), and [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) before a public launch.
 
+## License
+
+RoomRoute's original code is released under the [MIT License](LICENSE). Third-party dependencies, fonts, and externally hosted images remain subject to their respective licenses and terms.
+
 ## Supplementary database report
 
 An optional database-focused report and its regeneration script are in [`docs/reports/`](docs/reports/). This supplementary document follows a previously requested academic format; it does not define RoomRoute’s identity or imply that every documented service capability is deployed. Rebuild it with `python docs/reports/build_report.py` after installing the optional report-generation dependency listed in `docs/reports/requirements.txt`.

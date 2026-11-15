@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a focused improvement for renters, owners, or maintainers.
+title: "feature: "
+labels: []
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What user problem should this solve?
+      description: Describe the situation for a renter, owner, or moderator.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What would a useful solution look like?
+      description: Describe the smallest useful change and how you would know it helped.
+    validations:
+      required: true
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Safety, privacy, or operational considerations
+      description: Mention any personal data, trust, moderation, or maintenance needs.
+    validations:
+      required: false

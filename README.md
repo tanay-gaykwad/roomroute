@@ -1,14 +1,44 @@
 # RoomRoute
 
-RoomRoute is an independent software project for finding and listing rental rooms and flats in Nagpur. It is being built as a portfolio product, with a focused neighborhood pilot, renter search and shortlisting, owner listing submission, and service-side safeguards. It is not a college DBMS project.
+[![CI](https://github.com/tanay-gaykwad/roomroute/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tanay-gaykwad/roomroute/actions/workflows/ci.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-The repository includes an explicitly labelled synthetic preview dataset for trying the interface. Those records are not real rentals, contacts, reviews, or users.
+**Find a room, flat, PG, or roommate in Nagpur with the costs and details visible before you arrange a visit.**
 
-**Launch status: local preview, not a live public service in this repository snapshot.** Owners can add up to eight HTTPS image links; secure binary uploads, image processing, and managed object storage are not implemented. The UI shows “Owner photos not provided” rather than a stock image when a real listing has no gallery. Do not use fictional records or sample photos to imply real availability.
+RoomRoute is an independent, open-source rental discovery project focused on students and working professionals around Lokmanya Nagar and Hingna, Nagpur, Maharashtra. This repository is a working prototype for that service.
 
-## Run the preview
+> **Status:** There is no hosted public service or verified live inventory yet. The sample listings and profiles are fictional and clearly labeled. Do not use the preview to make rental or payment decisions.
 
-For the quickest local run, Python 3.12+ is required:
+## What it does
+
+- Search rooms, flats, PG accommodation, and roommate listings by area, rent, setup, utilities, parking, accessibility, pets, student eligibility, laundry, and air conditioning.
+- Compare owner-stated rent basis, deposit, maintenance, electricity, amenities, and photos.
+- Save places locally, send inquiries, and continue owner-renter conversations after email verification.
+- Opt into roommate introductions; contact details are shared only after an introduction is accepted.
+- Let owners submit listings for moderation and manage private household utility splits with accepted members.
+
+Listing details and photos are owner supplied. Approximate neighborhood locations are shown publicly. Email verification and moderation do not establish property ownership.
+
+## Try it locally
+
+### Docker Compose
+
+Requires Docker Desktop with the Compose plugin.
+
+```powershell
+git clone https://github.com/tanay-gaykwad/roomroute.git
+cd roomroute
+docker compose up --build -d
+docker compose exec app python server.py --seed-sample-data
+```
+
+Open the app at <http://localhost:8765> and the local email inbox at <http://localhost:8025>. Verification and password-reset messages appear in Mailpit. Sample accounts have no credentials; listings are for browsing only and cannot receive inquiries.
+
+Stop the services with `docker compose down`. Sample records can be removed with `docker compose exec app python server.py --remove-sample-data`.
+
+### Python preview
+
+Requires Python 3.12 or newer.
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -16,64 +46,44 @@ python server.py --seed-sample-data
 python server.py
 ```
 
-Open <http://127.0.0.1:8765>. This direct command uses a local SQLite file for isolated development. If SMTP is not configured, verification/recovery links are written to that local server's terminal output. Do not expose this mode to the internet.
+Open <http://127.0.0.1:8765>. The local preview uses SQLite and writes verification links to the server terminal when SMTP is not configured. Keep it on your own machine; it is not a public deployment setup.
 
-## Run the service stack locally
-
-Docker Compose starts the app with PostgreSQL, Redis, and a local Mailpit inbox. The app binds to loopback only.
+## Development
 
 ```powershell
-docker compose up --build
+python -m pip install -r requirements.txt
+python -m unittest discover -v
+node --check app.js
 ```
 
-Open the app at <http://localhost:8765> and the local email inbox at <http://localhost:8025>. Account verification and password-reset emails appear in Mailpit. Load the fictional inventory with:
+The GitHub Actions workflow also runs PostgreSQL and Redis integration checks, builds the container, and audits Python dependencies. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
-```powershell
-docker compose exec app python server.py --seed-sample-data
-```
+## Project map
 
-The sample owners, listings, and renter profiles are synthetic and have no credentials. Their listings are explicitly labelled and cannot receive inquiries. Remove only sample rows with `docker compose exec app python server.py --remove-sample-data`.
+| Path | Purpose |
+| --- | --- |
+| `server.py` | HTTP API, authentication, database access, email outbox, and static routes |
+| `app.js`, `*.html`, `*.css` | Browser interface and informational pages |
+| `test_server.py` | API, security, account, listing, and service-flow tests |
+| `Dockerfile`, `docker-compose.yml` | Local container image and PostgreSQL/Redis/Mailpit stack |
+| `render.yaml`, `DEPLOYMENT.md` | Example hosted configuration and deployment notes |
+| `SECURITY.md`, `SECURITY_REVIEW.md` | Vulnerability reporting and current security review |
 
-## Service features
+## Current priorities
 
-- A RoomRoute-branded, multi-page experience for renter discovery, saved places, owner onboarding, safety guidance, and the renter journey.
-- Browse categories for rooms, flats, PG accommodation, and roommate listings, with location, rent, furnishing, household preference, utilities, parking, access, pet, student-eligibility, laundry, and air-conditioning filters.
-- Owners can provide up to eight HTTPS photo links, bedroom and bathroom counts, parking spaces, accessibility and amenity details. Public locations remain approximate; the map link searches only the neighborhood.
-- Verified renter and owner accounts can continue listing inquiries in a private in-app inbox. Each API read/write checks that the signed-in account is one of the conversation participants; private messages are not exposed to moderators.
-- Renters can opt into roommate profiles with budget, preferred area, move-in timing, and living preferences. Only verified renter accounts see opted-in profiles. Contact email is shared only after the recipient accepts an introduction.
-- Owners can invite verified renters into a private household ledger. Renters accept before joining; active members can add monthly utility bills and see an equal per-person split. RoomRoute records the calculation but does not collect payments.
-- Inquiries include an optional move-in date, and owners can mark them open or dismissed.
-- PostgreSQL-backed data with a bounded connection pool when `DATABASE_URL` is set; production refuses to start without PostgreSQL.
-- Shared Redis fixed-window throttles for registration, listing creation, inquiries, and password-reset email requests.
-- Argon2 password storage, verified-email requirement, expiring single-use verification and password-reset tokens, secure production cookies, CSRF checks, and session revocation on password reset.
-- Inquiry records saved to PostgreSQL and queued in a durable SMTP outbox. The outbox retries failures and uses PostgreSQL row locks so replicas do not send the same pending message concurrently.
-- New owner listings remain private until a moderator approves them. Authenticated users can report listings; moderators can review or dismiss reports.
-- The initial neighborhood pilot is Lokmanya Nagar, Digdoh Hills, Wanadongri, Hingna Road, and Hingna MIDC. Other Nagpur areas remain selectable for the existing preview.
-- Each listing states whether rent and deposit apply per person/bed or to the whole place. New owner submissions require an authorization attestation, stored with its submission time; this is not proof of ownership and manual checks are still required.
-- Owner submissions must state whether maintenance is included, separately charged, or not charged. Legacy/sample records remain “not specified” rather than being assigned a guessed cost. Browse budget and sort controls compare rent; separately billed maintenance and electricity are displayed separately and should be confirmed with the owner.
-- Owners can mark an active listing unavailable; bringing it back requires moderator review. Owners still cannot edit listing details after submission.
-- Signed-in users can download an account export and delete their account and associated listings, inquiries, reports, sessions, and queued email.
-- Docker image runs as a non-root user; Compose health checks gate app startup on PostgreSQL and Redis readiness.
+1. Collect and manually verify owner-authorized pilot listings in the target Nagpur neighborhoods.
+2. Add a controlled image upload and review flow instead of external image links.
+3. Let owners correct listing details and confirm availability over time.
+4. Complete operational checks for hosting, email delivery, backups, monitoring, privacy information, and moderator MFA before real users.
 
-Create the first moderator interactively after starting the service:
+The full checklist and limits are in [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md). The project is not cleared for a public launch.
 
-```powershell
-docker compose exec app python server.py --create-moderator
-```
+## Contributing and support
 
-## Production deployment
+Bug reports, focused feature proposals, and small pull requests are welcome. Start with an issue for larger changes so the scope can be agreed before implementation. See [contribution guidelines](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), and [support options](SUPPORT.md).
 
-Deploy the image to a container platform and provide managed PostgreSQL, Redis, and a verified SMTP sender through its secret manager. Set `APP_ENV=production`, `DATABASE_URL`, `REDIS_URL`, `ROOMROUTE_PUBLIC_URL` (`https://...`), `ROOMROUTE_ALLOWED_HOSTS`, `SMTP_HOST`, `SMTP_PORT=587`, `SMTP_STARTTLS=1`, and `SMTP_FROM`. Set `SMTP_USERNAME` and `SMTP_PASSWORD` where the provider requires authentication. Startup refuses production mode if required configuration is missing. HTTPS termination and DNS must be configured at the hosting provider or trusted reverse proxy. If using a proxy, set `ROOMROUTE_TRUST_PROXY_CIDRS` to its actual source networks; forwarded client IPs are ignored otherwise.
-
-Never use the Compose default passwords or Mailpit for a public deployment. Use managed encrypted database/Redis services, backups with restore drills, alerting, log retention, and a reviewed domain email setup. Do not seed fictional data in a real environment. The app does not provision a cloud host, DNS, provider accounts, SMTP credentials, legal terms, or privacy notices for you.
-
-See [DEPLOYMENT.md](DEPLOYMENT.md), [SECURITY.md](SECURITY.md), [SECURITY_REVIEW.md](SECURITY_REVIEW.md), and [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) before a public launch.
+Please do not put credentials, private user data, or exploitable vulnerability details in public issues. Follow [SECURITY.md](SECURITY.md) for security reports.
 
 ## License
 
-RoomRoute's original code is released under the [MIT License](LICENSE). Third-party dependencies, fonts, and externally hosted images remain subject to their respective licenses and terms.
-
-## Supplementary database report
-
-An optional database-focused report and its regeneration script are in [`docs/reports/`](docs/reports/). This supplementary document follows a previously requested academic format; it does not define RoomRoute’s identity or imply that every documented service capability is deployed. Rebuild it with `python docs/reports/build_report.py` after installing the optional report-generation dependency listed in `docs/reports/requirements.txt`.
-
+RoomRoute's original code is available under the [MIT License](LICENSE). Third-party packages, fonts, and externally hosted photos are governed by their own licenses and terms.

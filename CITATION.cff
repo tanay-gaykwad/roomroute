@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: >-
+  If you use or adapt RoomRoute, please cite the repository and preserve the
+  applicable license notices.
+type: software
+title: RoomRoute
+abstract: >-
+  An open-source rental discovery prototype focused on students and working
+  professionals in Nagpur, Maharashtra.
+authors:
+  - family-names: Gaykwad
+    given-names: Tanay
+repository-code: 'https://github.com/tanay-gaykwad/roomroute'
+license: MIT
